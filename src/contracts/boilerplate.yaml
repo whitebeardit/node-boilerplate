@@ -1,0 +1,187 @@
+openapi: 3.0.2
+info:
+  title: Example API
+  description: This is a sample API to demonstrate OpenAPI specification.
+  version: 1.0.0
+  contact:
+    name: API Support
+    url: https://example.com/support
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.example.com/v1
+    description: Production server
+  - url: https://staging-api.example.com/v1
+    description: Staging server
+  - url: http://localhost
+
+tags:
+  - name: Users
+    description: User management operations
+
+paths:
+  /users:
+    get:
+      tags:
+        - Users
+      summary: Get all users
+      description: Retrieve a list of all users.
+      responses:
+        "200":
+          description: A list of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "500":
+          description: Server error
+    post:
+      tags:
+        - Users
+      summary: Create a new user
+      description: Add a new user to the database.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewUser"
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Bad request
+        "500":
+          description: Server error
+
+  /users/{id}:
+    get:
+      tags:
+        - Users
+      summary: Get a user by ID
+      description: Retrieve a user by their unique ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the user
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+        "500":
+          description: Server error
+    put:
+      tags:
+        - Users
+      summary: Update a user
+      description: Update the information of an existing user by ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUser"
+      responses:
+        "200":
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+        "400":
+          description: Bad request
+        "500":
+          description: Server error
+    delete:
+      tags:
+        - Users
+      summary: Delete a user
+      description: Delete an existing user by ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the user
+      responses:
+        "200":
+          description: User deleted successfully
+        "404":
+          description: User not found
+        "500":
+          description: Server error
+
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The unique identifier of the user
+        name:
+          type: string
+          description: The user's name
+        email:
+          type: string
+          description: The user's email address
+        createdAt:
+          type: string
+          format: date-time
+          description: The date and time the user was created
+    NewUser:
+      type: object
+      required:
+        - id
+        - name
+        - email
+      properties:
+        id:
+          type: string
+          description: The unique identifier for the user
+        name:
+          type: string
+          description: The user's name
+        email:
+          type: string
+          description: The user's email address
+        createdAt:
+          type: string
+          format: date-time
+          description: The creation timestamp (optional)
+    UpdateUser:
+      type: object
+      properties:
+        name:
+          type: string
+          description: The user's name
+        email:
+          type: string
+          description: The user's email address
