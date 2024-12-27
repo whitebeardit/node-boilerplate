@@ -10,7 +10,14 @@
     "clean": "rm -rf dist",
     "prettier": "prettier --cache --write src/**/*.ts",
     "lint": "eslint --cache .",
-    "release": "yarn run semantic-release"
+    "release": "yarn run semantic-release",
+    "test": "yarn run test:unit && yarn run test:int",
+    "test:ci": "jest --runInBand --forceExit --coverage --config ./jest/jest.ci-config.ts",
+    "test:unit": "jest --config ./jest/jest.config.ts --detectOpenHandles",
+    "test:int": "jest --runInBand --forceExit --config ./jest/jest.int-config.ts --detectOpenHandles",
+    "test:component": "jest --runInBand --config ./jest/jest.component-config.ts --detectOpenHandles",
+    "test:mutation": "npx stryker run",
+    "test:coverage": "jest --coverage --runInBand --forceExit --config ./jest/jest.int-config.ts --detectOpenHandles && jest --coverage --runInBand --forceExit --config ./jest/jest.config.ts --detectOpenHandles"
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",
@@ -19,12 +26,17 @@
     "@semantic-release/exec": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/release-notes-generator": "^14.0.1",
+    "@types/jest": "^29.5.14",
+    "@types/mongodb-memory-server": "^2.3.0",
     "@types/node": "^22.10.1",
     "eslint": "^9.16.0",
     "globals": "^15.12.0",
     "husky": "^9.1.7",
+    "jest": "^29.7.0",
+    "mongodb-memory-server": "^10.1.2",
     "prettier": "3.4.1",
     "semantic-release": "^24.2.0",
+    "ts-jest": "^29.2.5",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.16.0"
@@ -34,10 +46,11 @@
   "license": "ISC",
   "repository": "git@github.com:whitebeardit/node-boilerplate.git",
   "dependencies": {
+    "dotenv": "^16.4.7",
     "express": "^4.19.2",
     "express-openapi-validator": "^4.13.8",
-    "mongoose": "^8.8.3",
     "helmet": "^8.0.0",
+    "mongoose": "^8.8.3",
     "traceability": "^3.2.2"
   }
 }
