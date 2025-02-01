@@ -8,7 +8,7 @@ import { UserRepository } from "./infraestructure/repository/user.repository";
 
 const OPEN_API_SPEC_FILE_LOCATION = path.resolve(
   __dirname,
-  "./contracts/boilerplate.yaml"
+  "./contracts/service.yaml"
 );
 
 const app = new Server({
