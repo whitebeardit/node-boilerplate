@@ -10,9 +10,7 @@ const config: Config = {
   testRegex: '.*\\.unit.test\\.ts$',
   setupFiles: ['../jest/setup-tests.ts'],
   testEnvironment: 'node',
-  transform: {
-    '^.+\\.(t|j)s$': 'ts-jest',
-  },
+  transform: { '^.+\\.(t|j)s$': 'ts-jest' },
   collectCoverageFrom: ['**/*.(t|j)s', '!**/test/**'],
   coveragePathIgnorePatterns: [
     '/src/server.ts',

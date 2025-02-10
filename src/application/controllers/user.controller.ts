@@ -1,6 +1,6 @@
-import { Router, Request, Response } from "express";
-import { IController } from "../../domain/server/interfaces/IController";
-import { UserService } from "../../domain/user/user.service";
+import { Router, Request, Response } from 'express';
+import { IController } from '../../domain/server/interfaces/IController';
+import { UserService } from '../../domain/user/user.service';
 
 export class UserController implements IController {
   router: Router;
@@ -13,11 +13,11 @@ export class UserController implements IController {
   }
 
   initRoutes() {
-    this.router.get("/users", this.getUsers);
-    this.router.get("/users/:id", this.getUserById);
-    this.router.post("/users", this.createUser);
-    this.router.put("/users/:id", this.updateUser);
-    this.router.delete("/users/:id", this.deleteUser);
+    this.router.get('/users', this.getUsers);
+    this.router.get('/users/:id', this.getUserById);
+    this.router.post('/users', this.createUser);
+    this.router.put('/users/:id', this.updateUser);
+    this.router.delete('/users/:id', this.deleteUser);
   }
 
   /**
@@ -37,13 +37,13 @@ export class UserController implements IController {
    */
   getUserById = async (
     req: Request<{ id: string }>,
-    res: Response
+    res: Response,
   ): Promise<void> => {
     const { id } = req.params;
     try {
       const user = await this.userService.getUserById(id);
       if (!user) {
-        res.status(404).json({ message: "User not found" });
+        res.status(404).json({ message: 'User not found' });
         return;
       }
       res.status(200).json(user);
@@ -75,14 +75,14 @@ export class UserController implements IController {
    */
   updateUser = async (
     req: Request<{ id: string }>,
-    res: Response
+    res: Response,
   ): Promise<void> => {
     const { id } = req.params;
     const updateData = req.body;
     try {
       const updatedUser = await this.userService.updateUserById(id, updateData);
       if (!updatedUser) {
-        res.status(404).json({ message: "User not found" });
+        res.status(404).json({ message: 'User not found' });
         return;
       }
       res.status(200).json(updatedUser);
@@ -96,16 +96,16 @@ export class UserController implements IController {
    */
   deleteUser = async (
     req: Request<{ id: string }>,
-    res: Response
+    res: Response,
   ): Promise<void> => {
     const { id } = req.params;
     try {
       const deletedUser = await this.userService.deleteUserById(id);
       if (!deletedUser) {
-        res.status(404).json({ message: "User not found" });
+        res.status(404).json({ message: 'User not found' });
         return;
       }
-      res.status(200).json({ message: "User deleted successfully" });
+      res.status(200).json({ message: 'User deleted successfully' });
     } catch (error) {
       res.status(500).json({ error: (error as Error).message });
     }

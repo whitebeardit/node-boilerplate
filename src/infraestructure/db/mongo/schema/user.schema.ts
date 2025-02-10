@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+import mongoose from 'mongoose';
 
 export const userSchema = new mongoose.Schema({
   id: {
@@ -16,7 +16,7 @@ export const userSchema = new mongoose.Schema({
     unique: true, // Assuming emails are unique
     match: [
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-      "Please provide a valid email address",
+      'Please provide a valid email address',
     ],
   },
   createdAt: {

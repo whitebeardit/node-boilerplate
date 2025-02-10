@@ -1,5 +1,5 @@
-import { IUser } from "../../domain/user/user.interface";
-import { Muser } from "../db/mongo/models/user.model";
+import { IUser } from '../../domain/user/user.interface';
+import { Muser } from '../db/mongo/models/user.model';
 
 export class UserRepository {
   /**
@@ -39,7 +39,7 @@ export class UserRepository {
       return await Muser.findOne({ email });
     } catch (error) {
       throw new Error(
-        `Error finding user by email: ${(error as Error).message}`
+        `Error finding user by email: ${(error as Error).message}`,
       );
     }
   }
@@ -52,7 +52,7 @@ export class UserRepository {
    */
   async updateUserById(
     id: string,
-    updateData: Partial<IUser>
+    updateData: Partial<IUser>,
   ): Promise<IUser | null> {
     try {
       return await Muser.findOneAndUpdate({ id }, updateData, {
