@@ -1,7 +1,7 @@
-import { Router } from "express";
-import { IController } from "../../domain/server/interfaces/IController";
-import { Request, Response } from "express";
-import { BoilerplateService } from "../../domain/boilerplate/boilerplate.service";
+import { Router } from 'express';
+import { IController } from '../../domain/server/interfaces/IController';
+import { Request, Response } from 'express';
+import { BoilerplateService } from '../../domain/boilerplate/boilerplate.service';
 
 export class BoilerplateController implements IController {
   router: Router;

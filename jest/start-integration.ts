@@ -3,14 +3,13 @@ import { Logger } from 'traceability';
 
 async function getMongoDBInMemoryAndStartDB() {
   const mongoMemoryServer = await MongoMemoryReplSet.create({
-    replSet: {
-      count: 1,
-      storageEngine: 'wiredTiger',
-    },
+    replSet: { count: 1, storageEngine: 'wiredTiger' },
   });
   process.env.DATABASE_URI = mongoMemoryServer.getUri();
 
-  (global as typeof global & { __MONGOINSTANCE: MongoMemoryReplSet }).__MONGOINSTANCE = mongoMemoryServer;
+  (
+    global as typeof global & { __MONGOINSTANCE: MongoMemoryReplSet }
+  ).__MONGOINSTANCE = mongoMemoryServer;
 }
 
 export default async function globalSetup() {

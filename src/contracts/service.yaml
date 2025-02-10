@@ -30,15 +30,15 @@ paths:
       summary: Get all users
       description: Retrieve a list of all users.
       responses:
-        "200":
+        '200':
           description: A list of users
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/User"
-        "500":
+                  $ref: '#/components/schemas/User'
+        '500':
           description: Server error
     post:
       tags:
@@ -50,17 +50,17 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/NewUser"
+              $ref: '#/components/schemas/NewUser'
       responses:
-        "201":
+        '201':
           description: User created successfully
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
-        "400":
+                $ref: '#/components/schemas/User'
+        '400':
           description: Bad request
-        "500":
+        '500':
           description: Server error
 
   /users/{id}:
@@ -77,15 +77,15 @@ paths:
             type: string
           description: The ID of the user
       responses:
-        "200":
+        '200':
           description: User found
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
-        "404":
+                $ref: '#/components/schemas/User'
+        '404':
           description: User not found
-        "500":
+        '500':
           description: Server error
     put:
       tags:
@@ -104,19 +104,19 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateUser"
+              $ref: '#/components/schemas/UpdateUser'
       responses:
-        "200":
+        '200':
           description: User updated successfully
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/User"
-        "404":
+                $ref: '#/components/schemas/User'
+        '404':
           description: User not found
-        "400":
+        '400':
           description: Bad request
-        "500":
+        '500':
           description: Server error
     delete:
       tags:
@@ -131,11 +131,11 @@ paths:
             type: string
           description: The ID of the user
       responses:
-        "200":
+        '200':
           description: User deleted successfully
-        "404":
+        '404':
           description: User not found
-        "500":
+        '500':
           description: Server error
 
 components:

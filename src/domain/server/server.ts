@@ -4,14 +4,14 @@ import express, {
   Application,
   NextFunction,
   RequestHandler,
-} from "express";
-import { ContextAsyncHooks, Logger } from "traceability";
-import { Server as httpServer } from "http";
-import { IController } from "./interfaces/IController";
-import mongoose from "mongoose";
-import * as OpenApiValidator from "express-openapi-validator";
-import helmet from "helmet";
-import { HttpError } from "express-openapi-validator/dist/framework/types";
+} from 'express';
+import { ContextAsyncHooks, Logger } from 'traceability';
+import { Server as httpServer } from 'http';
+import { IController } from './interfaces/IController';
+import mongoose from 'mongoose';
+import * as OpenApiValidator from 'express-openapi-validator';
+import helmet from 'helmet';
+import { HttpError } from 'express-openapi-validator/dist/framework/types';
 
 export class Server {
   public app: Application;
@@ -25,8 +25,8 @@ export class Server {
   private readonly timeoutMilliseconds?: number;
 
   private readonly middleWaresToStart = [
-    express.json({ limit: "3mb" }),
-    express.urlencoded({ limit: "3mb", extended: true }),
+    express.json({ limit: '3mb' }),
+    express.urlencoded({ limit: '3mb', extended: true }),
     ContextAsyncHooks.getExpressMiddlewareTracking(),
     helmet(),
   ];
@@ -60,10 +60,10 @@ export class Server {
     middleWares.forEach((middleWare) => this.app.use(middleWare));
     this.app.use(
       OpenApiValidator.middleware({
-        apiSpec: this.apiSpecLocation || "",
+        apiSpec: this.apiSpecLocation || '',
         validateApiSpec: true,
         validateResponses: true,
-      })
+      }),
     );
   }
   private customizers() {
@@ -79,41 +79,41 @@ export class Server {
         if (err instanceof Error) {
           Logger.error(
             JSON.stringify({
-              eventName: "server.error",
+              eventName: 'server.error',
               message: err.message,
               stack: err.stack,
-            })
+            }),
           );
         }
         res.status(500).json({
-          message: "Internal Server Error",
+          message: 'Internal Server Error',
         });
-      }
+      },
     );
   }
 
-  private routes(controllers: Array<IController>, pathRoute = "/") {
+  private routes(controllers: Array<IController>, pathRoute = '/') {
     controllers.forEach((controller) =>
-      this.app.use(pathRoute, controller.getRoutes())
+      this.app.use(pathRoute, controller.getRoutes()),
     );
   }
 
   public async databaseSetup() {
     if (!this.DATABASE_URI) {
-      Logger.error("Database URI not provided");
+      Logger.error('Database URI not provided');
       return;
     }
-    mongoose.connection.once("connected", () => {
-      Logger.info("connect to MongoDB ");
+    mongoose.connection.once('connected', () => {
+      Logger.info('connect to MongoDB ');
     });
-    mongoose.connection?.on("error", (err) => {
+    mongoose.connection?.on('error', (err) => {
       Logger.info(`error to connect - MongoDB: Error: ${err.message}`);
     });
     await mongoose.connect(this.DATABASE_URI);
   }
 
   public async closeDatabase() {
-    mongoose.connection.once("disconnected", () => {
+    mongoose.connection.once('disconnected', () => {
       Logger.info(`Mongoose disconnected`);
     });
     await mongoose.disconnect();
@@ -123,8 +123,8 @@ export class Server {
     return this.app
       .listen(this.port, () => {
         Logger.info(`App listening on the http://localhost:${this.port}`, {
-          eventName: "start_listening",
-          process: "Application",
+          eventName: 'start_listening',
+          process: 'Application',
         });
       })
       .setTimeout(this.timeoutMilliseconds || 30000);

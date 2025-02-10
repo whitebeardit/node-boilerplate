@@ -1,5 +1,5 @@
-import { UserRepository } from "../../infraestructure/repository/user.repository";
-import { IUser } from "./user.interface";
+import { UserRepository } from '../../infraestructure/repository/user.repository';
+import { IUser } from './user.interface';
 
 export class UserService {
   private userRepository: UserRepository;
@@ -16,10 +16,10 @@ export class UserService {
     try {
       // Business logic (e.g., validation, ID/email uniqueness checks)
       const existingUser = await this.userRepository.findUserByEmail(
-        userData.email
+        userData.email,
       );
       if (existingUser) {
-        throw new Error("A user with this email already exists");
+        throw new Error('A user with this email already exists');
       }
 
       return await this.userRepository.createUser(userData);
@@ -37,12 +37,12 @@ export class UserService {
     try {
       const user = await this.userRepository.findUserById(id);
       if (!user) {
-        throw new Error("User not found");
+        throw new Error('User not found');
       }
       return user;
     } catch (error) {
       throw new Error(
-        `Error retrieving user by ID: ${(error as Error).message}`
+        `Error retrieving user by ID: ${(error as Error).message}`,
       );
     }
   }
@@ -56,12 +56,12 @@ export class UserService {
     try {
       const user = await this.userRepository.findUserByEmail(email);
       if (!user) {
-        throw new Error("User not found");
+        throw new Error('User not found');
       }
       return user;
     } catch (error) {
       throw new Error(
-        `Error retrieving user by email: ${(error as Error).message}`
+        `Error retrieving user by email: ${(error as Error).message}`,
       );
     }
   }
@@ -74,12 +74,12 @@ export class UserService {
    */
   async updateUserById(
     id: string,
-    updateData: Partial<IUser>
+    updateData: Partial<IUser>,
   ): Promise<IUser | null> {
     try {
       const user = await this.userRepository.findUserById(id);
       if (!user) {
-        throw new Error("User not found");
+        throw new Error('User not found');
       }
 
       return await this.userRepository.updateUserById(id, updateData);
@@ -97,7 +97,7 @@ export class UserService {
     try {
       const user = await this.userRepository.findUserById(id);
       if (!user) {
-        throw new Error("User not found");
+        throw new Error('User not found');
       }
 
       return await this.userRepository.deleteUserById(id);

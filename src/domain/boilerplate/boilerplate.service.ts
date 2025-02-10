@@ -1,5 +1,5 @@
 export class BoilerplateService {
   public getBoilerplate(): string {
-    return "Hello World!";
+    return 'Hello World!';
   }
 }
