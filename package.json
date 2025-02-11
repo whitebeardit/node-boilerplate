@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev --env-file=.env src/app.ts",
     "build": "tsc -p .;yarn run copy-essentials",
+    "start": "node dist/src/app.js",
     "copy-essentials": "mkdir -p dist/src/contracts && cp src/contracts/*.yaml dist/src/contracts",
     "clean": "rm -rf dist",
     "prettier": "prettier --cache --write src/**/*.ts",

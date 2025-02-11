@@ -1,0 +1,7 @@
+node_modules
+.terraform
+terraform-fargate-deploy
+containers_definitions.json
+Dockerfile
+terrafile.tf
+npm-debug.log
