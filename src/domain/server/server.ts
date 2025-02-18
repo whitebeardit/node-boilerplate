@@ -49,6 +49,10 @@ export class Server {
     this.DATABASE_URI = appInit.databaseURI;
     this.timeoutMilliseconds = appInit.timeoutMilliseconds;
 
+    this.app.get('/health', (req: Request, res: Response) => {
+      res.status(200).json({ status: 'OK' });
+    });
+
     this.middlewares(this.middleWaresToStart);
 
     this.routes(appInit.controllers || []);
