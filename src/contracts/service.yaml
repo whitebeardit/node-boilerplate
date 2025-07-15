@@ -40,6 +40,10 @@ paths:
                   $ref: '#/components/schemas/User'
         '500':
           description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     post:
       tags:
         - Users
@@ -60,8 +64,16 @@ paths:
                 $ref: '#/components/schemas/User'
         '400':
           description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
         '500':
           description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /users/{id}:
     get:
@@ -85,8 +97,16 @@ paths:
                 $ref: '#/components/schemas/User'
         '404':
           description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     put:
       tags:
         - Users
@@ -112,12 +132,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
-        '404':
-          description: User not found
         '400':
           description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     delete:
       tags:
         - Users
@@ -133,10 +165,22 @@ paths:
       responses:
         '200':
           description: User deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
         '404':
           description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
 components:
   schemas:
@@ -185,3 +229,82 @@ components:
         email:
           type: string
           description: The user's email address
+    Error:
+      type: object
+      required:
+        - message
+        - status
+      properties:
+        message:
+          type: string
+          description: Error message describing what went wrong
+          example: 'User not found'
+        status:
+          type: integer
+          description: HTTP status code
+          example: 404
+        timestamp:
+          type: string
+          format: date-time
+          description: When the error occurred
+          example: '2025-07-15T17:30:00.000Z'
+        path:
+          type: string
+          description: The API endpoint that generated the error
+          example: '/users/123'
+    ValidationError:
+      type: object
+      required:
+        - message
+        - status
+        - errors
+      properties:
+        message:
+          type: string
+          description: General validation error message
+          example: 'Validation failed'
+        status:
+          type: integer
+          description: HTTP status code
+          example: 400
+        timestamp:
+          type: string
+          format: date-time
+          description: When the error occurred
+          example: '2025-07-15T17:30:00.000Z'
+        path:
+          type: string
+          description: The API endpoint that generated the error
+          example: '/users'
+        errors:
+          type: array
+          description: List of specific validation errors
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                description: The field that failed validation
+                example: 'email'
+              message:
+                type: string
+                description: The validation error message
+                example: 'Email is required'
+              value:
+                type: string
+                description: The invalid value provided
+                example: ''
+    SuccessMessage:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Success message
+          example: 'User deleted successfully'
+        timestamp:
+          type: string
+          format: date-time
+          description: When the operation was completed
+          example: '2025-07-15T17:30:00.000Z'
