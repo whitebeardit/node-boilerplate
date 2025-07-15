@@ -1,28 +1,38 @@
-import { UserRepository } from '../../infraestructure/repository/user.repository';
-import { IUser } from './user.interface';
+import { IUserRepositoryRead } from '../repository/user.repository.read';
+import { IUserRepositoryWrite } from '../repository/user.repository.write';
+import { IUser } from '../interfaces/user.interface';
+import {
+  IParamsCreateUser,
+  IParamsUpdateUser,
+  IParamsUserService,
+  IUserService,
+} from '../interfaces/user.service.interface';
 
-export class UserService {
-  private userRepository: UserRepository;
+export class UserService implements IUserService {
+  private userRepositoryRead: IUserRepositoryRead;
+  private userRepositoryWrite: IUserRepositoryWrite;
 
-  constructor(userRepository: UserRepository) {
-    this.userRepository = userRepository;
+  constructor({ userRepositoryRead, userRepositoryWrite }: IParamsUserService) {
+    this.userRepositoryRead = userRepositoryRead;
+    this.userRepositoryWrite = userRepositoryWrite;
   }
+
   /**
    * Create a new user
-   * @param userData - The user data to create
+   * @param params - The user data to create
    * @returns The created user document
    */
-  async createUser(userData: IUser): Promise<IUser> {
+  async createUser(params: IParamsCreateUser): Promise<IUser> {
     try {
       // Business logic (e.g., validation, ID/email uniqueness checks)
-      const existingUser = await this.userRepository.findUserByEmail(
-        userData.email,
+      const existingUser = await this.userRepositoryRead.findUserByEmail(
+        params.email,
       );
       if (existingUser) {
         throw new Error('A user with this email already exists');
       }
 
-      return await this.userRepository.createUser(userData);
+      return await this.userRepositoryWrite.createUser(params);
     } catch (error) {
       throw new Error(`Error creating user: ${(error as Error).message}`);
     }
@@ -35,7 +45,7 @@ export class UserService {
    */
   async getUserById(id: string): Promise<IUser | null> {
     try {
-      const user = await this.userRepository.findUserById(id);
+      const user = await this.userRepositoryRead.findUserById(id);
       if (!user) {
         throw new Error('User not found');
       }
@@ -54,7 +64,7 @@ export class UserService {
    */
   async getUserByEmail(email: string): Promise<IUser | null> {
     try {
-      const user = await this.userRepository.findUserByEmail(email);
+      const user = await this.userRepositoryRead.findUserByEmail(email);
       if (!user) {
         throw new Error('User not found');
       }
@@ -74,15 +84,15 @@ export class UserService {
    */
   async updateUserById(
     id: string,
-    updateData: Partial<IUser>,
+    params: IParamsUpdateUser,
   ): Promise<IUser | null> {
     try {
-      const user = await this.userRepository.findUserById(id);
+      const user = await this.userRepositoryRead.findUserById(id);
       if (!user) {
         throw new Error('User not found');
       }
 
-      return await this.userRepository.updateUserById(id, updateData);
+      return await this.userRepositoryWrite.updateUserById(id, params.userData);
     } catch (error) {
       throw new Error(`Error updating user: ${(error as Error).message}`);
     }
@@ -95,12 +105,13 @@ export class UserService {
    */
   async deleteUserById(id: string): Promise<IUser | null> {
     try {
-      const user = await this.userRepository.findUserById(id);
+      const user = await this.userRepositoryRead.findUserById(id);
       if (!user) {
         throw new Error('User not found');
       }
 
-      return await this.userRepository.deleteUserById(id);
+      await this.userRepositoryWrite.deleteUserById(id);
+      return user;
     } catch (error) {
       throw new Error(`Error deleting user: ${(error as Error).message}`);
     }
@@ -113,7 +124,7 @@ export class UserService {
    */
   async listUsers(filter: Partial<IUser> = {}): Promise<IUser[]> {
     try {
-      return await this.userRepository.listUsers(filter);
+      return await this.userRepositoryRead.listUsers(filter);
     } catch (error) {
       throw new Error(`Error listing users: ${(error as Error).message}`);
     }

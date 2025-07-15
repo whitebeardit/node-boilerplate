@@ -1,9 +1,8 @@
 import mongoose from 'mongoose';
 import supertest from 'supertest';
-import { app } from '../../jest/setup-integration-tests';
-import { Muser } from '../infraestructure/db/mongo/models/user.model';
-import { IUser } from '../domain/user/user.interface';
-
+import { app } from '../../../jest/setup-integration-tests';
+import { Muser } from '../../infrastructure/db/mongo/models/user.model';
+import { IUser } from '../../domain/user/interfaces/user.interface';
 let paramsCreate: IUser;
 
 beforeEach(async () => {
