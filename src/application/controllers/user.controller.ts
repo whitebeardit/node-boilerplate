@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { IController } from '../../domain/server/interfaces/IController';
-import { UserService } from '../../domain/user/user.service';
+import { UserService } from '../../domain/user/service/user.service';
 
 export class UserController implements IController {
   router: Router;
