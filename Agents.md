@@ -1,120 +1,161 @@
-# `Agents.md` – Standards & TypeScript Stubs for Node.js + TypeScript REST APIs
+# `Agents.md` – Standards & TypeScript Stubs for **Clean‑Architecture Node.js + TypeScript** Projects
 
-This guide defines **architecture, naming conventions, folder layout, testing, linting, and code stubs** so that developers *and* AI agents (e.g. Codex, Copilot) can contribute to any Node.js + TypeScript REST‑API repository in a predictable, maintainable way.
-
----
-
-## 1  Folder Structure (Recommended)
-
-| Layer              | Path                                          | Purpose / Examples                                                                                                         |
-| ------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| **Domain**         | `src/domain`                                  | Pure business logic: entity interfaces (`IUser`), DTOs, service & repository contracts (`IUserService`, `IUserRepository`) |
-| **Application**    | `src/application`                             | Express/Fastify controllers, GraphQL resolvers, background workers                                                         |
-| **Infrastructure** | `src/infrastructure`                          | External concerns: database, cache, messaging, HTTP clients, cloud SDKs                                                    |
-|   └─ DB (Mongo)    | `src/infrastructure/db/mongo/{schema,models}` | Mongoose schemas & models                                                                                                  |
-|   └─ Messaging     | `src/infrastructure/messaging/<event>`        | Kafka/Rabbit producers & consumers                                                                                         |
-|   └─ Services      | `src/infrastructure/external/services`        | HTTP/GRPC clients for third‑party APIs                                                                                     |
-| **Configuration**  | `src/configurations`                          | Dependency‑injection factories, env loaders, feature flags                                                                 |
-| **Contracts**      | `src/contracts`                               | OpenAPI / Swagger YAML or JSON                                                                                             |
-| **Tests**          | `tests`                                       | Unit + integration tests (mirrors src layout)                                                                              |
-
-> **Tip:** adjust path casing (`infrastructure` vs `infraestructure`) to your team’s preference—stay consistent.
+This guide defines a **single, opinionated playbook** for architecture, naming, folder layout, testing, linting, and code stubs so that human developers *and* AI agents (Codex, Copilot, etc.) can collaborate on any Node.js + TypeScript repository in a predictable, maintainable way.
 
 ---
 
-## 2  Naming Conventions
+## 1  Folder Structure (Clean / Hexagonal)
 
-### 2.1 Interfaces & Enums
+| Layer / Adapter                   | Path (`src/...`)                        | **Interfaces / Contracts**                    | **Concrete Implementations**                                      | Notes                                                                  |
+| --------------------------------- | --------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **Domain**                        | `domain/`                               | Entities, **repository & service interfaces** | –                                                                 | Pure business rules; *never* import Express, Mongoose, KafkaJS, axios… |
+| └─ Entities                       | `domain/entities/`                      | `User.ts`, `Question.ts`…                     | –                                                                 | Value objects & aggregates                                             |
+| └─ Repositories                   | `domain/repositories/`                  | `IUserRepository.ts`…                         | –                                                                 | CRUD contracts only                                                    |
+| └─ Services                       | `domain/services/`                      | `IUserService.ts`…                            | –                                                                 | Stateless domain services                                              |
+| **Application**                   | `application/`                          | (optional) use‑case interfaces                | **Use‑case classes** (`CreateUserUseCase.ts`)                     | Orchestrates domain logic                                              |
+| **Interfaces (Ports)**            | `interfaces/`                           | –                                             | Adapters that talk **to or from** the outside world               | Never import infra libs                                                |
+| └─ HTTP (Ingress)                 | `interfaces/http/`                      | –                                             | `controllers/`, `routes/`, `middleware/`                          | Express/Fastify only                                                   |
+| └─ Messaging (Ingress)            | `interfaces/messaging/consumers/`       | –                                             | Kafka/Rabbit consumers                                            | Consume & call use‑cases                                               |
+| └─ External Services (Egress)     | `interfaces/external-services/clients/` | –                                             | HTTP/GRPC clients                                                 | Call 3rd‑party APIs                                                    |
+| **Infrastructure (Adapters Out)** | `infrastructure/`                       | –                                             | Concrete technology that **implements** domain contracts          | Only layer that may import Mongoose/KafkaJS/etc.                       |
+| └─ DB (Mongo)                     | `infrastructure/db/mongoose/`           | –                                             | `schemas/`, `models/`, `repositories/` (`MongoUserRepository.ts`) | Implements `IUserRepository`                                           |
+| └─ Kafka Producers                | `infrastructure/kafka/producers/`       | –                                             | `UserCreatedProducer.ts` …                                        | Publishes domain events                                                |
+| └─ Config / DI                    | `infrastructure/config/`                | DI container contracts                        | env loaders, factories                                            | Composition helpers                                                    |
+| **Contracts**                     | `contracts/`                            | –                                             | `openapi.yaml`, `asyncapi.yaml`                                   | Must mirror code                                                       |
+| **Bootstrap**                     | `main.ts`                               | –                                             | App wiring & server start                                         | Composition root                                                       |
+| **Tests**                         | `tests/`                                | Interface mocks                               | unit + integration tests                                          | Mirror `src/`                                                          |
 
-| Type                                    | Prefix | Casing | Example                                    |
-| --------------------------------------- | ------ | ------ | ------------------------------------------ |
-| **Domain interface**                    | `I`    | Pascal | `IUser`, `IOrderService`                   |
-| **Persistence interface** (Mongo model) | `IM`   | Pascal | `IMUser`, `IMOrder`                        |
-| **Enum**                                | `E`    | Pascal | `EStatus` with members `ACTIVE`, `PENDING` |
+> **Rule of thumb:** *Interfaces live in `domain/` (or occasionally `application/`) and **only** their concrete implementations live in `infrastructure/`.* Ingress adapters (controllers, consumers) **never** talk directly to infrastructure—only through use‑cases and interfaces.
 
-Other rules
+---
 
-* **Classes / functions** → PascalCase / camelCase (no prefix).
-* **Variables / properties** → `camelCase`.
-* **Constants** → `UPPER_SNAKE_CASE` (e.g. `JWT_SECRET`).
+## 2  Artifact‑to‑Folder Cheat‑Sheet
 
-### 2.2 IM Interfaces Pattern
+| Artifact                        | Folder                                                                  | File Example                        |
+| ------------------------------- | ----------------------------------------------------------------------- | ----------------------------------- |
+| **Express Controller**          | `interfaces/http/controllers/`                                          | `user.controller.ts`                |
+| **Route Table**                 | `interfaces/http/routes/`                                               | `user.routes.ts`                    |
+| **Kafka Consumer**              | `interfaces/messaging/consumers/`                                       | `user-created.consumer.ts`          |
+| **Kafka Producer**              | `infrastructure/kafka/producers/`                                       | `user-created.producer.ts`          |
+| **Domain Entity**               | `domain/entities/`                                                      | `user.entity.ts`                    |
+| **Domain Repository Interface** | `domain/repositories/`                                                  | `user.repository.interface.ts`      |
+| **Repository Implementation**   | `infrastructure/db/mongoose/repositories/`                              | `mongo-user.repository.ts`          |
+| **Domain Service Interface**    | `domain/services/`                                                      | `notification.service.interface.ts` |
+| **Service Implementation**      | `infrastructure/services/` *or* `interfaces/external-services/clients/` | `sendgrid-notification.service.ts`  |
+| **Application Use‑Case**        | `application/use-cases/`                                                | `create-user.use-case.ts`           |
+| **DTO / Mapper**                | `application/dto/`, `application/mappers/`                              | `create-user.dto.ts`                |
+| **DI Factory**                  | `infrastructure/config/factories/`                                      | `user.controller.factory.ts`        |
+| **OpenAPI / AsyncAPI**          | `contracts/`                                                            | `openapi.yaml`                      |
 
-Persistence documents often need Mongo‑specific fields (`_id: ObjectId`, `createdAt`, etc.). Model interfaces therefore **extend** or **wrap** domain interfaces:
+---
+
+## 3  Interfaces vs. Implementations — Golden Rules
+
+1. **Interfaces first.** Declare the contract in `domain/`.
+2. **Implementations later** in `infrastructure/`.
+3. Controllers/consumers depend **only** on use‑cases.
+4. Use‑cases depend **only** on injected *interfaces*.
+5. **Only infrastructure** touches external libraries and fulfills the contracts.
+
+---
+
+## 4  Sample Wiring Flow (colours = layer)
+
+```mermaid
+flowchart LR
+    HTTP[[HTTP Request]]
+    CTRL["UserController\ninterfaces/http/controllers"]
+    UC["CreateUserUseCase\napplication/use-cases"]
+    DS["UserService\ndomain/services"]
+    REPO{{"MongoUserRepository\ninfrastructure/db/mongoose/repositories"}}
+    Mongo[(MongoDB)]
+    PROD["UserCreatedProducer\ninfrastructure/kafka/producers"]
+
+    HTTP --> CTRL
+    CTRL --> UC
+    UC --> DS
+    DS -->|IUserRepository| REPO
+    REPO -->|Mongoose| Mongo
+    UC -->|Kafka Event| PROD
+
+    class CTRL interfaces;
+    class UC application;
+    class DS domain;
+    class REPO infrastructure;
+    class Mongo infrastructure;
+    class PROD infrastructure;
+
+    classDef interfaces fill:#C9DAF8,stroke:#333,stroke-width:1px,color:#000;
+    classDef application fill:#A4C2F4,stroke:#333,stroke-width:1px,color:#000;
+    classDef domain fill:#FFD580,stroke:#333,stroke-width:1px,color:#000;
+    classDef infrastructure fill:#D5A6BD,stroke:#333,stroke-width:1px,color:#000;
+```
+
+---
+
+## 5  Naming Conventions
+
+### 5.1 Interfaces & Enums
+
+| Type                                  | Prefix | Casing | Example                         |
+| ------------------------------------- | ------ | ------ | ------------------------------- |
+| **Domain interface**                  | `I`    | Pascal | `IUser`, `IOrderService`        |
+| **Persistence interface** (Mongo doc) | `IM`   | Pascal | `IMUser`                        |
+| **Enum**                              | `E`    | Pascal | `EStatus` (`ACTIVE`, `PENDING`) |
+
+*Classes / functions* → PascalCase or camelCase.<br>*Constants* → `UPPER_SNAKE_CASE`.
+
+### 5.2 `IM*` Pattern
 
 ```ts
-import { IUser } from "../../domain/user/interfaces/user.interface";
-
 export interface IMUser extends IUser {
-  _id: Types.ObjectId;       // Mongo‑specific
+  _id: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
 ```
 
-Use `IM*` in:
-
-* `mongoose.Schema<IMUser>` type parameter.
-* `model<IMUser>("User", UserSchema)` generic.
+Use in `Schema<IMUser>` and `model<IMUser>("User", UserSchema)`.
 
 ---
 
-## 3  Code Stubs
+## 6  Code Stubs
 
-### 3.1 Domain (Entity & Repository Contract)
-
-`src/domain/user/interfaces/user.interface.ts`
+### 6.1 Domain – Entity & Repository Contract
 
 ```ts
-export interface IUser {
-  id: string;          // exposed id (string – can be different from Mongo ObjectId)
-  name: string;
-  email: string;
-}
-```
+// domain/entities/user.entity.ts
+export interface IUser { id: string; name: string; email: string; }
 
-`src/domain/user/repositories/user.repository.interface.ts`
-
-```ts
+// domain/repositories/user.repository.interface.ts
 export interface IUserRepository {
   findById(id: string): Promise<IUser | null>;
   create(user: IUser): Promise<void>;
 }
 ```
 
-### 3.2 Mongoose Schema & Model
-
-`src/infrastructure/db/mongo/schema/user.schema.ts`
+### 6.2 Mongoose Schema & Model (Infrastructure)
 
 ```ts
-import { Schema } from "mongoose";
-import { IMUser } from "../models/user.model";
-
+// infrastructure/db/mongoose/schemas/user.schema.ts
 export const UserSchema = new Schema<IMUser>({
-  name:  { type: String, required: true },
+  name : { type: String, required: true },
   email: { type: String, required: true, unique: true },
-}, { timestamps: true });
-```
+},{ timestamps: true });
 
-`src/infrastructure/db/mongo/models/user.model.ts`
-
-```ts
-import { model } from "mongoose";
-import { IMUser } from "./user.model";          // circular‑free import pattern
-import { UserSchema } from "../schema/user.schema";
-
+// infrastructure/db/mongoose/models/user.model.ts
 export const UserModel = model<IMUser>("User", UserSchema);
 ```
 
-### 3.3 External HTTP Service
-
-`src/infrastructure/external/services/auth.external.service.ts`
+### 6.3 External HTTP Service (Interface + Impl.)
 
 ```ts
+// domain/services/auth.external-service.interface.ts
 export interface IAuthExternalService {
   validateToken(token: string): Promise<IUser | null>;
 }
 
+// interfaces/external-services/clients/auth.external.service.ts
 export class AuthExternalService implements IAuthExternalService {
   async validateToken(token: string) {
     return httpClient.post(`${AUTH_API}/validate`, { token });
@@ -122,17 +163,16 @@ export class AuthExternalService implements IAuthExternalService {
 }
 ```
 
-### 3.4 Messaging (Kafka example)
-
-`src/infrastructure/messaging/user-created/producer.ts`
+### 6.4 Messaging (Kafka Producer)
 
 ```ts
+// infrastructure/kafka/producers/user-created.producer.ts
 export class UserCreatedProducer {
-  async publish(payload: IUser): Promise<void> {
+  async publish(user: IUser) {
     await kafkaProducer.produce({
       topic: "user.events",
-      key: payload.id,
-      value: JSON.stringify({ type: "USER_CREATED", data: payload }),
+      key  : user.id,
+      value: JSON.stringify({ type: "USER_CREATED", data: user }),
     });
   }
 }
@@ -140,174 +180,89 @@ export class UserCreatedProducer {
 
 ---
 
-## 4  Dependency Injection (Factory Example)
+## 7  Controller Pattern & OpenAPI Compliance
 
-`src/configurations/user-service.factory.ts`
+* Controllers live in `interfaces/http/controllers` → extract request → call use‑case → map response.
+* **No** business logic in controllers.
+* **Every** route must be documented in `contracts/openapi.yaml` (params, schemas, examples, `operationId`).
+
+---
+
+## 8  Dependency Injection & Bootstrapping
 
 ```ts
 export class UserServiceFactory {
   static create(): IUserService {
     return new UserService({
-      userRepository: new UserRepository(),
-      authExternalService: new AuthExternalService(),
-      userCreatedProducer: new UserCreatedProducer(),
+      userRepository      : new MongoUserRepository(),
+      userCreatedProducer : new UserCreatedProducer(),
     });
   }
 }
 ```
 
-### 4.1 Application Bootstrap with Factories
+`main.ts` connects DB → starts HTTP → starts background workers. **No side‑effects at module load time.**
 
-Use a single **app entry point** (`src/app.ts`) to wire the HTTP server and background workers through their **factory‑created** instances. Keep the composition‑root thin—only wiring, no business logic.
+---
+
+## 9  Testing & Linting Standards
+
+| Tool         | Purpose                 | Command              |
+| ------------ | ----------------------- | -------------------- |
+| **Jest**     | unit + integration      | `yarn test`          |
+| **Coverage** | ≥ 80 % lines & branches | `yarn test:coverage` |
+| **ESLint**   | Airbnb + TS rules       | `yarn lint`          |
+| **Prettier** | formatting              | `yarn format`        |
+
+CI must fail if coverage or linting is below the threshold.
+
+---
+
+## 10  Codex Contribution Checklist ✅
+
+1. **Naming & Files** — use `I*`, `IM*`, `E*`; put files in the correct folders.
+2. **Architecture** — keep controllers thin, use DI everywhere.
+3. **Quality** — tests ≥ 80 %, ESLint & Prettier pass.
+4. **Docs** — keep OpenAPI / AsyncAPI synchronized with code.
+
+---
+
+## 11  Messaging Producer Checklist (Kafka)
+
+1. Create *interface + implementation* under the correct folders.
+2. Inject the producer via the service constructor.
+3. Register the implementation in its factory.
+4. Call the producer **after** repository operations.
+5. Add a spy integration test that ensures the producer fires with the correct payload.
+
+---
+
+## 12  Layer Responsibilities & Route Conventions
+
+* **Controller** – adapt HTTP ↔ use‑case.
+* **Service / Use‑Case** – business rules, idempotency.
+* **Repository** – thin CRUD wrappers; rely on DB constraints.
+* **Route naming** – `/resource-name/action` (kebab‑case).
+* **Avoid** generic names (e.g., `mapFunction`).
+
+---
+
+## 13  Strict Interface & Typing Rules
+
+* Repositories & services **must** return typed interfaces — never `any`.
+* 👉 **No `typeof`‑based ad‑hoc types**; define interfaces explicitly.
+* Always reuse existing interfaces before creating new ones.
 
 ```ts
-import path from 'node:path';
-import { Server } from './domain/server/server';
-import { AppointmentControllerFactory } from './configurations/factory/appointment.controller.factory';
-import { ConsumerWorkerFactory } from './configurations/factory/messaging/consumer.worker.factory';
-
-const OPEN_API_SPEC_FILE_LOCATION = path.resolve(
-  __dirname,
-  './contracts/your-service.yaml',
-);
-
-const app = new Server({
-  port: Number(process.env.PORT) || 3000,
-  controllers: [AppointmentControllerFactory.create()],
-  databaseURI: process.env.DATABASE_URI,
-  apiSpecLocation: OPEN_API_SPEC_FILE_LOCATION,
-});
-
-async function start() {
-  // 1️⃣  DB connection & indexes
-  await app.databaseSetup();
-
-  // 2️⃣  Start HTTP server
-  app.listen();
-
-  // 3️⃣  Background workers (Kafka, BullMQ, etc.)
-  const worker = ConsumerWorkerFactory.create();
-  worker.startWorkers();
+export interface IQuestionRepository {
+  findByEid(eid: string): Promise<IQuestion | null>;
 }
-
-start().catch((err) => {
-  console.error('Fatal bootstrap error', err);
-  process.exit(1);
-});
 ```
 
-**Guidelines**
+### Why?
 
-* Perform bootstrap‑phase I/O (DB, queues) **inside** `start()` not at module load time.
-* Order: **database → HTTP server → background workers**.
-* Export only what’s necessary for tests (e.g., `app` or `Server` instance).
-  Avoid leaking worker threads globally.
-
-### 4.2 Factory Directory Structure Factory Directory Structure
-
-| Artifact Type                 | Recommended Path & Naming                                        | Example File                                                      |
-| ----------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **Controller Factory**        | `src/configurations/factory/<feature>.controller.factory.ts`     | `src/configurations/factory/appointment.controller.factory.ts`    |
-| **Service Factory**           | `src/configurations/factory/<feature>.service.factory.ts`        | `src/configurations/factory/appointment.service.factory.ts`       |
-| **Worker / Consumer Factory** | `src/configurations/factory/messaging/<event>.worker.factory.ts` | `src/configurations/factory/messaging/consumer.worker.factory.ts` |
-
-**Rules**
-
-1. Factories live **only** under `src/configurations/factory` to keep the composition‑root logic centralized.
-2. Messaging‑related worker factories are nested inside `factory/messaging` for quick discoverability.
-3. Each factory exposes a static `create()` method returning the fully wired instance.
-4. Factories must *never* perform I/O at module‑load time—side‑effects belong in `create()`.
+* Safer refactors; compile‑time guarantees.
+* Clear contracts between layers (controller → use‑case → repo).
+* Helps AI code tools reason about your structures.
 
 ---
-
-## 5  Testing & Linting Standards
-
-| Tool         | Purpose                               | Command (yarn)                |
-| ------------ | ------------------------------------- | ----------------------------- |
-| **Jest**     | Unit + integration tests              | `yarn test`                   |
-| **Coverage** | Ensure ≥ 80 % lines/branches          | `yarn test:coverage`          |
-| **ESLint**   | Linting with Airbnb/TypeScript rules  | `yarn lint` / `yarn lint:fix` |
-| **Prettier** | Code formatting (optional but common) | `yarn format`                 |
-
-> Enforce CI gates (GitHub Actions, GitLab CI) to fail if coverage or lint rules are not met.
-
----
-
-## 6  Codex Contribution Checklist ✅
-
-When generating or editing code, **always**:
-
-1. **Naming & Files**
-
-   * Use `I*` for domain, `IM*` for persistence docs, `E*` for enums.
-   * Place Mongoose schemas in `infrastructure/db/mongo/schema/`.
-   * Place Mongoose models in `infrastructure/db/mongo/models/`.
-   * Locate external service clients in `infrastructure/external/services/`.
-   * Put event producers/consumers under `infrastructure/messaging/<event>/`.
-2. **Architecture**
-
-   * Keep controllers thin—delegate to services.
-   * Inject all dependencies via factories (`src/configurations`).
-3. **Quality**
-
-   * Add/maintain tests (`tests/`) to keep coverage ≥ 80 %.
-   * Pass ESLint & Prettier.
-4. **Docs**
-
-   * Update OpenAPI specs in `src/contracts` as endpoints change.
-
-Follow this guide to ensure contributions are **consistent, testable, and production‑ready** — and easy for humans *and* AI assistants to understand.
-
----
-
-## 7  Messaging Producer Checklist (Kafka)
-
-When introducing **Kafka producer functionality**:
-
-1. **Interface & Implementation**
-   *Create* an interface (`IJourneyProducerKafka`) and a concrete class (`JourneyProducerKafka`) inside `src/infrastructure/messaging/<event>/`.
-2. **Service Integration**
-   Inject the producer interface via constructor dependency injection inside the related service located at `src/domain/<context>/service/`.
-3. **Factory Registration**
-   Register the concrete producer in the corresponding factory file (e.g. `src/configurations/factory/<context>/service.factory.ts`).
-4. **Method Naming**
-   Use descriptive names such as `scheduleUserJourneyExpiration(userJourneyId, endDate)`.
-5. **Service Layer Calls**
-   Call producer methods *after* successful repository operations (e.g. `await this.repository.create(...)`).
-6. **Integration Tests**
-   Add tests under `tests/integration/<context>/controller/` with `jest.spyOn()` to assert that the producer method is executed with the correct parameters.
-
----
-
-## 8  Layered Responsibilities & Route Conventions
-
-### 8.1 Controller Layer
-
-* Extract data from `req` and delegate to services.
-* **No** conditional or business logic.
-* Perform only basic presence validation.
-* Map errors without embedding business branches.
-
-### 8.2 Service Layer
-
-* Central hub for business rules and validations.
-* Implement idempotency safeguards.
-* Handle race conditions through DB constraints and translate DB errors into domain errors.
-
-### 8.3 Repository Layer
-
-* Provide thin CRUD wrappers.
-* Do **not** embed domain logic.
-* Rely on DB constraints (unique indexes, etc.) for integrity enforcement.
-
-### 8.4 Route Naming
-
-* Pattern: `/authorizers/{resource-name}/{action}`.
-* Use **kebab‑case** for multi‑word resource names.
-
-### 8.5 Descriptive Naming
-
-* Avoid generic names like `mapFunction`.
-* Prefer intent‑revealing identifiers, e.g., `missionConditionHandlers`.
-
-> Adhering to these conventions ensures clear separation of concerns, promotes maintainability, and simplifies testing.
