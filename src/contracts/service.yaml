@@ -28,6 +28,7 @@ paths:
       tags:
         - Users
       summary: Get all users
+      operationId: getUsers
       description: Retrieve a list of all users.
       responses:
         '200':
@@ -48,6 +49,7 @@ paths:
       tags:
         - Users
       summary: Create a new user
+      operationId: createUser
       description: Add a new user to the database.
       requestBody:
         required: true
@@ -80,6 +82,7 @@ paths:
       tags:
         - Users
       summary: Get a user by ID
+      operationId: getUserById
       description: Retrieve a user by their unique ID.
       parameters:
         - name: id
@@ -111,6 +114,7 @@ paths:
       tags:
         - Users
       summary: Update a user
+      operationId: updateUser
       description: Update the information of an existing user by ID.
       parameters:
         - name: id
@@ -154,6 +158,7 @@ paths:
       tags:
         - Users
       summary: Delete a user
+      operationId: deleteUser
       description: Delete an existing user by ID.
       parameters:
         - name: id

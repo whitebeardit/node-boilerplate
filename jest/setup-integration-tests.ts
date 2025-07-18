@@ -1,5 +1,5 @@
 import { bootstrapTest } from '../src/__tests__/testUtils';
-import { Server } from '../src/domain/server/server';
+import { Server } from '../src/interfaces/http/server';
 import { MongooseDatabase } from './setup-db';
 
 let dbInstance: MongooseDatabase;
