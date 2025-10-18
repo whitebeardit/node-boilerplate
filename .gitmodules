@@ -1,0 +1,3 @@
+[submodule ".cursor/rules/ai_knowledge_base"]
+	path = .cursor/rules/ai_knowledge_base
+	url = https://github.com/whitebeardit/ai_knowledge_base.git
