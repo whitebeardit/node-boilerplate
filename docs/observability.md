@@ -136,6 +136,12 @@ POST /users (cid header or generated)
 This makes any request traceable end to end with a single id: logs (`cid`),
 traces (`trace_id`) and data (`cid` on the item).
 
+Idempotency-related events worth alerting on: `user.new.duplicate` (info —
+idempotent replays; expected under at-least-once delivery) and
+`user.email_guard.release_failed` (warn — an email guard could not be
+released and blocks that email until fixed; see the guard table in
+`docs/architecture.md`).
+
 ## Tests
 
 - `.env.test` sets `OTEL_SDK_DISABLED=true` — no exporter/spans in tests.

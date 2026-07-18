@@ -11,9 +11,20 @@ info:
 
     Operational contract:
 
-    - Non-retryable failures (malformed payload, duplicate user) are
-      acknowledged (deleted) with a structured warn log that preserves the
-      body — redelivery could never make them succeed.
+    - The queue is FIFO: producers set MessageGroupId and
+      MessageDeduplicationId to the user id, so duplicate publishes dedup at
+      the queue (5-minute window) and processing is serialized per user. The
+      user id is the idempotency key end to end.
+
+    - Duplicates (idempotent replays — same id or an email already claimed)
+      are acknowledged with an info log (user.new.duplicate): storage-level
+      conditional writes plus an email uniqueness guard table make replays
+      no-ops, so consuming the same message any number of times creates
+      exactly one user.
+
+    - Malformed payloads are acknowledged (deleted) with a structured warn
+      log that preserves the body — redelivery could never make them
+      succeed.
 
     - Any other failure leaves the message on the queue: the visibility
       timeout expires and the queue's redrive policy (maxReceiveCount,
@@ -33,7 +44,9 @@ servers:
 channels:
   userNew:
     address: USER.NEW
-    description: Queue carrying user-creation events
+    description: >-
+      FIFO queue carrying user-creation events (MessageGroupId and
+      MessageDeduplicationId = user id)
     messages:
       userNew:
         $ref: '#/components/messages/UserNew'

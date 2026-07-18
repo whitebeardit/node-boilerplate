@@ -151,8 +151,25 @@ graph LR
     R -->|item + cid| D[(DynamoDB users)]
 ```
 
-Duplicate emails no longer surface as HTTP 409: the consumer drops the
-duplicate with a warn log (idempotent replay). Callers track outcomes by cid.
+Duplicate emails no longer surface as HTTP 409; callers track outcomes by cid.
+
+### Idempotency guarantees (duplicate requests and messages are safe)
+
+1. **Queue (FIFO)** — the producer sets `MessageGroupId`/`MessageDeduplicationId`
+   to the user id on `.fifo` queues: duplicate requests dedup at the queue for
+   5 minutes and processing is serialized per user.
+2. **Storage (guard table saga)** — `UserRepositoryWrite.createUser` first
+   claims the email in the `users-email` guard table with
+   `attribute_not_exists(email) OR userId = :userId`, then writes the user
+   item with `attribute_not_exists(id)`. Each put is atomic; the `OR` makes
+   re-claims by the same user pass, so a crash between the two steps
+   self-heals when the message is redelivered. A different user claiming the
+   email gets `ConflictError`. Deletes release the guard; email updates claim
+   the new key and release the old one (case-insensitive normalization).
+3. **Consumer** — `ConflictError`/`ConditionalCheckFailedException` are acked
+   as idempotent success (`user.new.duplicate`, info); only unknown errors
+   retry. Replaying the same message any number of times yields exactly one
+   user.
 
 ## Message flow (SQS `USER.NEW`)
 
@@ -174,7 +191,7 @@ graph TD
 | --- | --- | --- |
 | Created | `ack` | `DeleteMessageCommand` |
 | Invalid payload (`BadRequestError`) | `ack` + warn | Deleted — redelivery can never fix it |
-| Duplicate (`ConflictError` / `ConditionalCheckFailedException`) | `ack` + warn | Deleted — idempotent replay |
+| Duplicate (`ConflictError` / `ConditionalCheckFailedException`) | `ack` + info (`user.new.duplicate`) | Deleted — idempotent replay |
 | Unknown error | `retry` + error | Left on queue → visibility timeout → redrive policy → DLQ |
 
 The redrive policy (`maxReceiveCount` → DLQ) is infrastructure configuration; the application never tracks receive counts. `POST /ops/user-new/redrive` starts a native SQS move task (`StartMessageMoveTask`) sending the DLQ messages back to the source queue — domain port `IDlqRedriver`, implementation `SqsDlqRedriver`, orchestrated by `OpsService` (`src/domain/ops/`). Boot order is telemetry → env → database → HTTP → worker; shutdown stops the worker **first** (drains the in-flight batch), then closes the HTTP server and the database. The message contract lives in `src/contracts/asyncapi.yaml`.

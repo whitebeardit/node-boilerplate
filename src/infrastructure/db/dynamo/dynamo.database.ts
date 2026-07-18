@@ -1,5 +1,6 @@
 import {
   CreateTableCommand,
+  CreateTableCommandInput,
   DescribeTableCommand,
   ResourceNotFoundException,
   waitUntilTableExists,
@@ -7,9 +8,15 @@ import {
 import { Logger } from 'traceability';
 import { IDatabase } from '../database.interface';
 import { dynamoClient } from './dynamo.client';
-import { USER_TABLE_NAME, userTableDefinition } from './tables/user.table';
+import { userTableDefinition } from './tables/user.table';
+import { userEmailTableDefinition } from './tables/user-email.table';
 
 const TABLE_CREATION_MAX_WAIT_SECONDS = 30;
+
+const TABLE_DEFINITIONS: CreateTableCommandInput[] = [
+  userTableDefinition,
+  userEmailTableDefinition,
+];
 
 /**
  * DynamoDB lifecycle adapter: ensures the tables exist on boot (idempotent —
@@ -18,7 +25,9 @@ const TABLE_CREATION_MAX_WAIT_SECONDS = 30;
  */
 export class DynamoDatabase implements IDatabase {
   async start(): Promise<void> {
-    await this.ensureUserTable();
+    for (const definition of TABLE_DEFINITIONS) {
+      await this.ensureTable(definition);
+    }
     Logger.info('Connected to DynamoDB', { eventName: 'database.connected' });
   }
 
@@ -29,23 +38,25 @@ export class DynamoDatabase implements IDatabase {
     });
   }
 
-  private async ensureUserTable(): Promise<void> {
+  private async ensureTable(
+    definition: CreateTableCommandInput,
+  ): Promise<void> {
     try {
       await dynamoClient.send(
-        new DescribeTableCommand({ TableName: USER_TABLE_NAME }),
+        new DescribeTableCommand({ TableName: definition.TableName }),
       );
     } catch (error) {
       if (!(error instanceof ResourceNotFoundException)) {
         throw error;
       }
-      await dynamoClient.send(new CreateTableCommand(userTableDefinition));
+      await dynamoClient.send(new CreateTableCommand(definition));
       await waitUntilTableExists(
         { client: dynamoClient, maxWaitTime: TABLE_CREATION_MAX_WAIT_SECONDS },
-        { TableName: USER_TABLE_NAME },
+        { TableName: definition.TableName },
       );
       Logger.info('DynamoDB table created', {
         eventName: 'database.table_created',
-        tableName: USER_TABLE_NAME,
+        tableName: definition.TableName,
       });
     }
   }

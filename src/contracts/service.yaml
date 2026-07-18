@@ -76,9 +76,12 @@ paths:
       description: >-
         Publishes a USER.NEW message carrying the request's correlation id
         (cid) and trace context; the consumer persists the user
-        asynchronously. Duplicate emails are resolved at consume time (the
-        message is dropped with a warning), so this endpoint never returns
-        409. Track the request with the returned cid via GET /ops/users.
+        asynchronously. The operation is idempotent by user id: resubmitting
+        the same id is deduplicated at the FIFO queue and, beyond that, is a
+        storage-level no-op — exactly one user is ever created. Duplicate
+        emails are resolved at consume time (an email uniqueness guard
+        rejects the second user), so this endpoint never returns 409. Track
+        the request with the returned cid via GET /ops/users.
       requestBody:
         required: true
         content:

@@ -16,9 +16,10 @@ import { parseUserNewPayload } from './user.new.payload';
 
 const tracer = trace.getTracer('user-new-consumer');
 
-function isNonRetryable(error: unknown): boolean {
+// The same user was already processed (idempotent replay): the email guard
+// or the id condition rejected the write.
+function isDuplicate(error: unknown): boolean {
   return (
-    error instanceof BadRequestError ||
     error instanceof ConflictError ||
     error instanceof ConditionalCheckFailedException
   );
@@ -76,7 +77,17 @@ export class UserNewConsumer implements ISqsMessageHandler {
             });
             return 'ack';
           } catch (error) {
-            if (isNonRetryable(error)) {
+            if (isDuplicate(error)) {
+              Logger.info(
+                `USER.NEW already processed: ${(error as Error).message}`,
+                {
+                  eventName: 'user.new.duplicate',
+                  messageId: message.MessageId,
+                },
+              );
+              return 'ack';
+            }
+            if (error instanceof BadRequestError) {
               Logger.warn(
                 `USER.NEW message dropped: ${(error as Error).message}`,
                 {

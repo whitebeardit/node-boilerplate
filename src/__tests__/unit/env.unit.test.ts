@@ -11,6 +11,7 @@ describe('When we load the environment configuration', () => {
       AWS_REGION: 'us-east-1',
       DYNAMODB_ENDPOINT: 'http://localhost:8000',
       DYNAMODB_USERS_TABLE: 'users-table',
+      DYNAMODB_USERS_EMAIL_TABLE: 'users-email-table',
       SQS_USER_NEW_QUEUE_URL: 'http://localhost:9324/queue/user-new',
       SQS_USER_NEW_DLQ_ARN: 'arn:aws:sqs:us-east-1:000000000000:user-new-dlq',
       SQS_ENDPOINT: 'http://localhost:9324',
@@ -23,6 +24,7 @@ describe('When we load the environment configuration', () => {
       expect(env.awsRegion).toBe('us-east-1');
       expect(env.dynamodbEndpoint).toBe('http://localhost:8000');
       expect(env.usersTableName).toBe('users-table');
+      expect(env.usersEmailTableName).toBe('users-email-table');
       expect(env.sqsUserNewQueueUrl).toBe(
         'http://localhost:9324/queue/user-new',
       );
@@ -42,6 +44,7 @@ describe('When we load the environment configuration', () => {
     delete process.env.PORT;
     delete process.env.DYNAMODB_ENDPOINT;
     delete process.env.DYNAMODB_USERS_TABLE;
+    delete process.env.DYNAMODB_USERS_EMAIL_TABLE;
     delete process.env.SQS_ENDPOINT;
 
     jest.isolateModules(() => {
@@ -50,6 +53,7 @@ describe('When we load the environment configuration', () => {
       expect(env.port).toBe(3000);
       expect(env.dynamodbEndpoint).toBeUndefined();
       expect(env.usersTableName).toBe('users');
+      expect(env.usersEmailTableName).toBe('users-email');
       expect(env.sqsEndpoint).toBeUndefined();
     });
   });

@@ -319,6 +319,10 @@ When generating or editing code, **always**:
 * Central hub for business rules; throws typed domain errors.
 * Handle race conditions via DB constraints (condition expressions such as
   `attribute_not_exists`) and translate DB conflicts into domain errors.
+  Attributes that must be unique but are not the key (e.g. email) get a
+  **guard table** claimed with `attribute_not_exists(key) OR ownerId = :id`
+  before the main write — re-claims by the same owner make retries
+  idempotent (saga pattern; GSIs do not enforce uniqueness).
 
 ### 8.3 Repository layer
 * Thin CRUD wrappers; no domain logic, no try/catch re-wrapping.
@@ -342,7 +346,7 @@ When generating or editing code, **always**:
 
 1. **Handler** — `class <Event>Consumer implements ISqsMessageHandler` in `src/infrastructure/messaging/<event>/`, receiving the domain service **interface** via constructor. It is the messaging analog of a controller: parse/validate (payload parser throws `BadRequestError`), delegate, decide `'ack' | 'retry'` — business rules stay in the service.
 2. **Tracking context** — before the first log or service call, re-establish the context that came in the MessageAttributes: `ContextAsyncHooks.asyncLocalStorage.run({ cid }, ...)` (cid precedence: attribute > traceparent trace-id > generated) plus `propagation.extract` + a CONSUMER span, so every log carries `cid`/`trace_id` and downstream spans are children of the message trace.
-3. **Error policy** — non-retryable failures (invalid payload, duplicates) → warn + `'ack'`; anything else → error + `'retry'` (visibility timeout → redrive policy → DLQ, configured in infrastructure — never track receive counts in code).
+3. **Error policy** — duplicates (idempotent replays: `ConflictError`/conditional-check failures) → **info** `user.new.duplicate` + `'ack'`; invalid payload → warn `user.new.dropped` + `'ack'`; anything else → error + `'retry'` (visibility timeout → redrive policy → DLQ, configured in infrastructure — never track receive counts in code).
 4. **Worker & factory** — reuse the generic `SqsWorker` (long poll, delete on ack, drain on stop); wire in `src/infrastructure/config/factories/messaging/<event>.worker.factory.ts` with `static create(): IWorker`; start after the HTTP server, stop **first** on shutdown.
 5. **Contract** — keep `src/contracts/asyncapi.yaml` updated (payload schema, tracking headers, operational notes).
 6. **Tests** — unit for handler/payload; integration with `aws-sdk-client-mock` on `SQSClient` and the real service/repository stack.
@@ -350,7 +354,7 @@ When generating or editing code, **always**:
 ### 9.2 Producer
 
 1. **Port in the domain, implementation in infrastructure** — the contract (`I<Event>Producer`, e.g. `IUserNewProducer`) lives in `src/domain/<feature>/messaging/` (like repository contracts), so domain services can depend on it; the SQS class (`<Event>ProducerSqs`) lives in `src/infrastructure/messaging/<event>/` and implements it.
-2. **Context injection** — inject `traceparent`/`tracestate` (`propagation.inject`) and the current `cid` as MessageAttributes so consumers resume the same trace (cid must be present even with the OTel SDK disabled).
+2. **Context injection** — inject `traceparent`/`tracestate` (`propagation.inject`) and the current `cid` as MessageAttributes so consumers resume the same trace (cid must be present even with the OTel SDK disabled). On `.fifo` queues also set `MessageGroupId`/`MessageDeduplicationId` to the entity id — the idempotency key.
 3. **Service integration** — inject the producer port via constructor (`IParams*Service`); async write endpoints publish and answer 202 with the cid.
 4. **Factory registration** — wire it in `src/infrastructure/config/factories/<feature>.service.factory.ts`.
 5. **Tests** — assert body serialization and tracking attributes with `aws-sdk-client-mock`.

@@ -6,6 +6,7 @@ import { UserNewProducerSqs } from '../../infrastructure/messaging/user-new/user
 import { IUser } from '../../domain/user/interfaces/user.interface';
 
 const QUEUE_URL = 'http://localhost/000000000000/user-new-test';
+const FIFO_QUEUE_URL = 'http://localhost/000000000000/user-new-test.fifo';
 const A_CID = 'c1d2c1d2c1d2c1d2c1d2c1d2c1d2c1d2';
 
 const A_USER: IUser = {
@@ -42,6 +43,22 @@ describe('When we publish a USER.NEW message', () => {
     expect(input.MessageAttributes?.cid?.StringValue).toMatch(
       /^[0-9a-f]{32}$/,
     );
+    expect(input.MessageGroupId).toBeUndefined();
+    expect(input.MessageDeduplicationId).toBeUndefined();
+  });
+
+  it('should use the user id as the FIFO idempotency key on .fifo queues', async () => {
+    const producer = new UserNewProducerSqs({
+      client: new SQSClient({}),
+      queueUrl: FIFO_QUEUE_URL,
+    });
+
+    await producer.publishUserNew(A_USER);
+
+    const [call] = sqsMock.commandCalls(SendMessageCommand);
+    const input = call.args[0].input;
+    expect(input.MessageGroupId).toBe(A_USER.id);
+    expect(input.MessageDeduplicationId).toBe(A_USER.id);
   });
 
   it('should propagate the current tracking cid into the message', async () => {

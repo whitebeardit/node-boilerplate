@@ -1,6 +1,6 @@
 import { Message } from '@aws-sdk/client-sqs';
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
-import { ContextAsyncHooks } from 'traceability';
+import { ContextAsyncHooks, Logger } from 'traceability';
 import { UserNewConsumer } from '../../infrastructure/messaging/user-new/user.new.consumer';
 import { IUserService } from '../../domain/user/interfaces/user.service.interface';
 import { IUser } from '../../domain/user/interfaces/user.interface';
@@ -160,7 +160,8 @@ describe('When the payload is invalid', () => {
 });
 
 describe('When the user already exists', () => {
-  it('should ack on a duplicated email (ConflictError)', async () => {
+  it('should ack a duplicated email as an idempotent replay', async () => {
+    const infoSpy = jest.spyOn(Logger, 'info');
     userService.createUser.mockRejectedValue(
       new ConflictError('A user with this email already exists'),
     );
@@ -170,9 +171,15 @@ describe('When the user already exists', () => {
     );
 
     expect(decision).toBe('ack');
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.stringContaining('already processed'),
+      expect.objectContaining({ eventName: 'user.new.duplicate' }),
+    );
+    infoSpy.mockRestore();
   });
 
-  it('should ack on a duplicated id (conditional check failure)', async () => {
+  it('should ack a duplicated id as an idempotent replay', async () => {
+    const infoSpy = jest.spyOn(Logger, 'info');
     userService.createUser.mockRejectedValue(
       new ConditionalCheckFailedException({
         message: 'The conditional request failed',
@@ -185,6 +192,11 @@ describe('When the user already exists', () => {
     );
 
     expect(decision).toBe('ack');
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.stringContaining('already processed'),
+      expect.objectContaining({ eventName: 'user.new.duplicate' }),
+    );
+    infoSpy.mockRestore();
   });
 });
 

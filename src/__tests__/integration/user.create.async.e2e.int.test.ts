@@ -48,6 +48,9 @@ describe('When a user creation flows from the REST API to the database', () => {
     const [sendCall] = sqsMock.commandCalls(SendMessageCommand);
     const sent = sendCall.args[0].input;
     expect(sent.MessageAttributes?.cid?.StringValue).toBe(cid);
+    // FIFO idempotency key: duplicate requests dedup at the queue.
+    expect(sent.MessageGroupId).toBe(paramsCreate.id);
+    expect(sent.MessageDeduplicationId).toBe(paramsCreate.id);
 
     // 2. The worker consumes exactly what the API published.
     sqsMock.reset();

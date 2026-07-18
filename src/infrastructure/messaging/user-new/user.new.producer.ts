@@ -51,6 +51,13 @@ export class UserNewProducerSqs implements IUserNewProducer {
             { DataType: 'String', StringValue: value },
           ]),
         ),
+        // On a FIFO queue the user id is the idempotency key: duplicate
+        // requests dedup at the queue (5-minute window) and processing is
+        // serialized per user. Standard queues reject these fields, and the
+        // storage-level guarantees hold either way.
+        ...(this.queueUrl.endsWith('.fifo')
+          ? { MessageGroupId: user.id, MessageDeduplicationId: user.id }
+          : {}),
       }),
     );
 

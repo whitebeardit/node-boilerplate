@@ -17,6 +17,7 @@ export const env = {
   // Point to DynamoDB Local/dynalite in dev and tests; unset means real AWS.
   dynamodbEndpoint: process.env.DYNAMODB_ENDPOINT,
   usersTableName: process.env.DYNAMODB_USERS_TABLE || 'users',
+  usersEmailTableName: process.env.DYNAMODB_USERS_EMAIL_TABLE || 'users-email',
   sqsUserNewQueueUrl: requireEnv('SQS_USER_NEW_QUEUE_URL'),
   // ARN of the USER.NEW dead-letter queue, used by POST /ops/user-new/redrive.
   sqsUserNewDlqArn: requireEnv('SQS_USER_NEW_DLQ_ARN'),
