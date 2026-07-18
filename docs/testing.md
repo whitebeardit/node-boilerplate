@@ -6,10 +6,17 @@
 yarn test           # unit + integration
 yarn test:unit      # jest --config ./jest/jest.config.ts
 yarn test:int       # jest --runInBand --forceExit --config ./jest/jest.int-config.ts
-yarn test:coverage  # coverage for both (target: ≥ 80% lines/branches)
+yarn test:coverage  # both suites with coverage + merged 80/80 threshold check
+yarn coverage:check # nyc merges coverage/int + coverage/unit and enforces ≥80% lines/branches
 ```
 
-CI (`.github/workflows/ci.yml`) runs lint → build → test:unit → test:int on
+Coverage is measured per suite (unit covers the pure logic, integration covers
+the HTTP stack) and **enforced on the merged report** — each suite alone would
+fail an 80% branch threshold because they exercise different layers. Runtime
+bootstrap files (`main.ts`, `infrastructure/telemetry/tracing.ts`) are excluded:
+they are exercised at runtime, not by tests.
+
+CI (`.github/workflows/ci.yml`) runs lint → build → `yarn test:coverage` on
 pushes to `main`/`stage` and on pull requests.
 
 ## Configuration (`jest/` directory, outside `src/`)
@@ -81,5 +88,8 @@ Watch out for:
 
 ## Coverage
 
-- Minimum 80% globally (lines and branches); critical domain services ≥ 90%.
-- Exclusions already configured: `src/contracts/`, `src/__tests__/` (see `coveragePathIgnorePatterns`).
+- Minimum 80% globally (lines and branches), enforced on the merged report by
+  `yarn coverage:check`; critical domain services ≥ 90%.
+- Exclusions already configured: `src/contracts/`, `src/__tests__/`
+  (`coveragePathIgnorePatterns`) and the runtime bootstrap `main.ts` /
+  `infrastructure/telemetry/tracing.ts` (`collectCoverageFrom`).
