@@ -7,6 +7,8 @@ import {
   IParamsUserService,
   IUserService,
 } from '../interfaces/user.service.interface';
+import { ConflictError } from '../../errors/conflict.error';
+import { NotFoundError } from '../../errors/not-found.error';
 
 export class UserService implements IUserService {
   private userRepositoryRead: IUserRepositoryRead;
@@ -20,113 +22,85 @@ export class UserService implements IUserService {
   /**
    * Create a new user
    * @param params - The user data to create
-   * @returns The created user document
+   * @returns The created user
+   * @throws ConflictError when a user with the same email already exists
    */
   async createUser(params: IParamsCreateUser): Promise<IUser> {
-    try {
-      // Business logic (e.g., validation, ID/email uniqueness checks)
-      const existingUser = await this.userRepositoryRead.findUserByEmail(
-        params.email,
-      );
-      if (existingUser) {
-        throw new Error('A user with this email already exists');
-      }
-
-      return await this.userRepositoryWrite.createUser(params);
-    } catch (error) {
-      throw new Error(`Error creating user: ${(error as Error).message}`);
+    const existingUser = await this.userRepositoryRead.findUserByEmail(
+      params.email,
+    );
+    if (existingUser) {
+      throw new ConflictError('A user with this email already exists');
     }
+
+    return this.userRepositoryWrite.createUser(params);
   }
 
   /**
    * Get a user by ID
    * @param id - The user's ID
-   * @returns The user document or null if not found
+   * @returns The user
+   * @throws NotFoundError when the user does not exist
    */
-  async getUserById(id: string): Promise<IUser | null> {
-    try {
-      const user = await this.userRepositoryRead.findUserById(id);
-      if (!user) {
-        throw new Error('User not found');
-      }
-      return user;
-    } catch (error) {
-      throw new Error(
-        `Error retrieving user by ID: ${(error as Error).message}`,
-      );
+  async getUserById(id: string): Promise<IUser> {
+    const user = await this.userRepositoryRead.findUserById(id);
+    if (!user) {
+      throw new NotFoundError('User not found');
     }
+    return user;
   }
 
   /**
    * Get a user by email
    * @param email - The user's email
-   * @returns The user document or null if not found
+   * @returns The user
+   * @throws NotFoundError when the user does not exist
    */
-  async getUserByEmail(email: string): Promise<IUser | null> {
-    try {
-      const user = await this.userRepositoryRead.findUserByEmail(email);
-      if (!user) {
-        throw new Error('User not found');
-      }
-      return user;
-    } catch (error) {
-      throw new Error(
-        `Error retrieving user by email: ${(error as Error).message}`,
-      );
+  async getUserByEmail(email: string): Promise<IUser> {
+    const user = await this.userRepositoryRead.findUserByEmail(email);
+    if (!user) {
+      throw new NotFoundError('User not found');
     }
+    return user;
   }
 
   /**
    * Update a user's information by ID
-   * @param id - The user's ID
-   * @param updateData - The data to update
-   * @returns The updated user document or null if not found
+   * @param params - The user's ID and the data to update
+   * @returns The updated user
+   * @throws NotFoundError when the user does not exist
    */
-  async updateUserById(
-    id: string,
-    params: IParamsUpdateUser,
-  ): Promise<IUser | null> {
-    try {
-      const user = await this.userRepositoryRead.findUserById(id);
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      return await this.userRepositoryWrite.updateUserById(id, params.userData);
-    } catch (error) {
-      throw new Error(`Error updating user: ${(error as Error).message}`);
+  async updateUserById(params: IParamsUpdateUser): Promise<IUser> {
+    const updatedUser = await this.userRepositoryWrite.updateUserById(
+      params.id,
+      params.userData,
+    );
+    if (!updatedUser) {
+      throw new NotFoundError('User not found');
     }
+    return updatedUser;
   }
 
   /**
    * Delete a user by ID
    * @param id - The user's ID
-   * @returns The deleted user document or null if not found
+   * @returns The deleted user
+   * @throws NotFoundError when the user does not exist
    */
-  async deleteUserById(id: string): Promise<IUser | null> {
-    try {
-      const user = await this.userRepositoryRead.findUserById(id);
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      await this.userRepositoryWrite.deleteUserById(id);
-      return user;
-    } catch (error) {
-      throw new Error(`Error deleting user: ${(error as Error).message}`);
+  async deleteUserById(id: string): Promise<IUser> {
+    const deletedUser = await this.userRepositoryWrite.deleteUserById(id);
+    if (!deletedUser) {
+      throw new NotFoundError('User not found');
     }
+    return deletedUser;
   }
 
   /**
    * List all users with optional filters
    * @param filter - Filters for the query
-   * @returns An array of user documents
+   * @returns An array of users
    */
   async listUsers(filter: Partial<IUser> = {}): Promise<IUser[]> {
-    try {
-      return await this.userRepositoryRead.listUsers(filter);
-    } catch (error) {
-      throw new Error(`Error listing users: ${(error as Error).message}`);
-    }
+    return this.userRepositoryRead.listUsers(filter);
   }
 }

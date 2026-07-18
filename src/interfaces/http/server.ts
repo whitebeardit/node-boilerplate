@@ -12,6 +12,7 @@ import mongoose from 'mongoose';
 import * as OpenApiValidator from 'express-openapi-validator';
 import helmet from 'helmet';
 import { HttpError } from 'express-openapi-validator/dist/framework/types';
+import { DomainError } from '../../domain/errors/domain.error';
 
 export class Server {
   public app: Application;
@@ -24,7 +25,7 @@ export class Server {
 
   private readonly timeoutMilliseconds?: number;
 
-  private readonly middleWaresToStart = [
+  private readonly defaultMiddlewares = [
     express.json({ limit: '3mb' }),
     express.urlencoded({ limit: '3mb', extended: true }),
     ContextAsyncHooks.getExpressMiddlewareTracking(),
@@ -32,15 +33,10 @@ export class Server {
   ];
   constructor(appInit: {
     port: number;
-    originAllowed?: string[] | RegExp[];
-    corsWithCredentials?: boolean;
     middlewaresToStart?: Array<RequestHandler>;
     controllers?: Array<IController>;
     apiSpecLocation?: string;
     databaseURI?: string;
-    customizers?: Array<
-      (application: Application, fileDestination: string) => void
-    >;
     timeoutMilliseconds?: number;
   }) {
     this.app = express();
@@ -53,11 +49,14 @@ export class Server {
       res.status(200).json({ status: 'OK' });
     });
 
-    this.middlewares(this.middleWaresToStart);
+    this.middlewares([
+      ...this.defaultMiddlewares,
+      ...(appInit.middlewaresToStart || []),
+    ]);
 
     this.routes(appInit.controllers || []);
 
-    this.customizers();
+    this.errorHandler();
   }
 
   private middlewares(middleWares: Array<RequestHandler>) {
@@ -70,27 +69,43 @@ export class Server {
       }),
     );
   }
-  private customizers() {
+
+  /**
+   * Central error handler: the only place that translates errors into HTTP
+   * responses, always matching the Error/ValidationError contract schemas.
+   */
+  private errorHandler() {
     this.app.use(
       (err: Error, req: Request, res: Response, _next: NextFunction) => {
-        if (err instanceof HttpError) {
-          if (err.status === 500) {
-            Logger.error(JSON.stringify(err));
-          }
-          res.status(err.status).json({ message: err.message });
+        if (err instanceof DomainError) {
+          res.status(err.status).json({
+            message: err.message,
+            status: err.status,
+          });
           return;
         }
-        if (err instanceof Error) {
-          Logger.error(
-            JSON.stringify({
-              eventName: 'server.error',
-              message: err.message,
-              stack: err.stack,
-            }),
-          );
+        if (err instanceof HttpError) {
+          if (err.status >= 500) {
+            Logger.error(err.message, {
+              eventName: 'server.http_error',
+              status: err.status,
+              errors: err.errors,
+            });
+          }
+          res.status(err.status).json({
+            message: err.message,
+            status: err.status,
+            errors: err.errors,
+          });
+          return;
         }
+        Logger.error(err.message, {
+          eventName: 'server.error',
+          stack: err.stack,
+        });
         res.status(500).json({
           message: 'Internal Server Error',
+          status: 500,
         });
       },
     );
@@ -104,21 +119,24 @@ export class Server {
 
   public async databaseSetup() {
     if (!this.DATABASE_URI) {
-      Logger.error('Database URI not provided');
-      return;
+      throw new Error('Database URI not provided');
     }
     mongoose.connection.once('connected', () => {
-      Logger.info('connect to MongoDB ');
+      Logger.info('Connected to MongoDB', { eventName: 'database.connected' });
     });
     mongoose.connection?.on('error', (err) => {
-      Logger.info(`error to connect - MongoDB: Error: ${err.message}`);
+      Logger.error(`Error connecting to MongoDB: ${err.message}`, {
+        eventName: 'database.connection_error',
+      });
     });
     await mongoose.connect(this.DATABASE_URI);
   }
 
   public async closeDatabase() {
     mongoose.connection.once('disconnected', () => {
-      Logger.info(`Mongoose disconnected`);
+      Logger.info('Mongoose disconnected', {
+        eventName: 'database.disconnected',
+      });
     });
     await mongoose.disconnect();
   }
