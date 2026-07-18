@@ -68,6 +68,27 @@ describe('When we get a user by ID', () => {
   });
 });
 
+describe('When we get a user by email', () => {
+  it('should return the user when it exists', async () => {
+    userRepositoryRead.findUserByEmail.mockResolvedValue(A_USER);
+
+    const user = await userService.getUserByEmail(A_USER.email);
+
+    expect(user).toEqual(A_USER);
+    expect(userRepositoryRead.findUserByEmail).toHaveBeenCalledWith(
+      A_USER.email,
+    );
+  });
+
+  it('should throw NotFoundError when the user does not exist', async () => {
+    userRepositoryRead.findUserByEmail.mockResolvedValue(null);
+
+    await expect(
+      userService.getUserByEmail('missing@email.com'),
+    ).rejects.toThrow(NotFoundError);
+  });
+});
+
 describe('When we update a user', () => {
   it('should update and return the user when it exists', async () => {
     const updatedUser = { ...A_USER, name: 'Edward Newgate' };
