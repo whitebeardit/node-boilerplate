@@ -12,7 +12,7 @@ graph TD
     C --> D[domain/user/service<br/>UserService]
     D --> E[domain/user/repository<br/>IUserRepositoryRead / IUserRepositoryWrite]
     E -.implemented by.-> F[infrastructure/repository/user<br/>UserRepositoryRead / UserRepositoryWrite]
-    F --> G[infrastructure/db/mongo<br/>userSchema / Muser]
+    F --> G[infrastructure/db/dynamo<br/>dynamoDocumentClient / user.table]
 ```
 
 **Dependency rule:** `domain/` is pure — it does not import `infrastructure/`
@@ -92,13 +92,20 @@ Initialization order in the `Server` constructor:
 In `main.ts`, the boot order is: telemetry (first-line import) → env validation
 (`infrastructure/config/env.ts`, fail-fast) → `new Server(...)` →
 `await databaseSetup()` → `listen()` → graceful-shutdown registration
-(SIGTERM/SIGINT close the HTTP server and Mongoose, exit 0 on success, with a
-failsafe timeout).
+(SIGTERM/SIGINT close the HTTP server and the DynamoDB client, exit 0 on
+success, with a failsafe timeout).
+
+The `Server` receives an `IDatabase` adapter
+(`src/infrastructure/db/database.interface.ts`) instead of a connection string:
+`DynamoDatabase` (`src/infrastructure/db/dynamo/dynamo.database.ts`) ensures
+the tables exist on `start()` (idempotent — in production they are usually
+provisioned by IaC) and destroys the client on `close()`.
 
 ## Domain errors (`src/domain/errors/`)
 
 `DomainError` (base, carries the HTTP `status`) and the specializations
-`NotFoundError` (404) and `ConflictError` (409). The error flow is always:
+`BadRequestError` (400), `NotFoundError` (404) and `ConflictError` (409).
+The error flow is always:
 service throws a typed error → controller passes it on with `next(error)` →
 central error handler responds in the contract shape. No other layer builds
 error responses.
@@ -109,13 +116,85 @@ error responses.
 2. `OpenApiValidator` validates the request against `src/contracts/service.yaml` — an invalid body → 400 `ValidationError` before reaching the controller.
 3. `UserController.createUser` (arrow function property) extracts `{ id, name, email, createdAt }` from the body and calls `userService.createUser(...)`.
 4. `UserService.createUser` applies the business rule: email already in use → throws `ConflictError` (becomes 409 in the handler); otherwise builds the `User` entity and delegates to `userRepositoryWrite.createUser`.
-5. `UserRepositoryWrite` persists via the `Muser` model and returns a plain `IUser` (projection hides `_id`/`__v` — see `mongo.projection.ts`).
+5. `UserRepositoryWrite` persists via a `PutCommand` on the users table and returns a plain `IUser` (the `toUser` mapper in `user.table.ts` picks fields explicitly, so storage internals never leak).
 6. The controller responds `201` with the user; any error goes to `next(error)`.
 7. `OpenApiValidator` validates the **response** against the contract before sending it.
 
-`GET /users` is paginated: `limit`/`offset` query params (validated and coerced
-by the contract), forwarded by the controller to the service, which applies
-defaults (20/0) and passes an `IPagination` to the repository (`skip`/`limit`).
+`GET /users` uses cursor pagination: `limit`/`cursor` query params (validated
+and coerced by the contract), forwarded by the controller to the service, which
+applies the default limit (20) and passes an `IPagination` to the repository.
+The repository resumes the scan from the decoded cursor (`ExclusiveStartKey`),
+fills the page (paging past filtered-out items) and returns
+`IPaginatedResult<IUser>` — `{ items, nextCursor }`, where `nextCursor` is the
+last returned item's key encoded as an opaque base64url token
+(`dynamo.cursor.ts`). A malformed cursor throws `BadRequestError` (400).
+
+## Asynchronous write path (`POST /users` → SQS → DynamoDB)
+
+`POST /users` does not persist: it validates the payload against the contract,
+publishes `USER.NEW` (via the domain port `IUserNewProducer`, implemented by
+`UserNewProducerSqs`) and answers `202 { message, cid }` once the message is
+on the queue. The consumer completes the write with the same business rules.
+The cid returned to the caller is the one stamped on the message and, later,
+on the DynamoDB item — `GET /ops/users?cid=` closes the loop.
+
+```mermaid
+graph LR
+    C[Client] -->|POST /users| A[UserController]
+    A -->|enqueueUserCreation| S[UserService]
+    S -->|publishUserNew + cid/traceparent| Q[(SQS USER.NEW)]
+    A -->|202 message + cid| C
+    Q --> W[SqsWorker]
+    W --> H[UserNewConsumer]
+    H -->|createUser| S2[UserService]
+    S2 --> R[UserRepositoryWrite]
+    R -->|item + cid| D[(DynamoDB users)]
+```
+
+Duplicate emails no longer surface as HTTP 409; callers track outcomes by cid.
+
+### Idempotency guarantees (duplicate requests and messages are safe)
+
+1. **Queue (FIFO)** — the producer sets `MessageGroupId`/`MessageDeduplicationId`
+   to the user id on `.fifo` queues: duplicate requests dedup at the queue for
+   5 minutes and processing is serialized per user.
+2. **Storage (guard table saga)** — `UserRepositoryWrite.createUser` first
+   claims the email in the `users-email` guard table with
+   `attribute_not_exists(email) OR userId = :userId`, then writes the user
+   item with `attribute_not_exists(id)`. Each put is atomic; the `OR` makes
+   re-claims by the same user pass, so a crash between the two steps
+   self-heals when the message is redelivered. A different user claiming the
+   email gets `ConflictError`. Deletes release the guard; email updates claim
+   the new key and release the old one (case-insensitive normalization).
+3. **Consumer** — `ConflictError`/`ConditionalCheckFailedException` are acked
+   as idempotent success (`user.new.duplicate`, info); only unknown errors
+   retry. Replaying the same message any number of times yields exactly one
+   user.
+
+## Message flow (SQS `USER.NEW`)
+
+```mermaid
+graph TD
+    Q[SQS queue<br/>USER.NEW] --> W[messaging/sqs<br/>SqsWorker - long poll]
+    W --> H[messaging/user-new<br/>UserNewConsumer]
+    H --> S[domain/user/service<br/>UserService.createUser]
+    S --> R[infrastructure/repository/user<br/>UserRepositoryWrite]
+    R --> D[(DynamoDB users table)]
+```
+
+1. `SqsWorker` (generic long-poller, `src/infrastructure/messaging/sqs/sqs.worker.ts`) receives up to 10 messages per poll requesting the tracking MessageAttributes (`traceparent`, `tracestate`, `cid`).
+2. `UserNewConsumer` re-establishes the tracking context **before anything else**: `ContextAsyncHooks.asyncLocalStorage.run({ cid }, ...)` plus `propagation.extract` + a CONSUMER span — every log down the chain carries `cid`/`trace_id` and the DynamoDB spans are children of the message trace.
+3. The payload is validated (`parseUserNewPayload` → `BadRequestError` on invalid input) and delegated to `UserService.createUser` — the **same business rules** as `POST /users` (email conflict → `ConflictError`).
+4. The consumer returns a delivery decision; the worker owns the queue semantics:
+
+| Outcome | Decision | Queue effect |
+| --- | --- | --- |
+| Created | `ack` | `DeleteMessageCommand` |
+| Invalid payload (`BadRequestError`) | `ack` + warn | Deleted — redelivery can never fix it |
+| Duplicate (`ConflictError` / `ConditionalCheckFailedException`) | `ack` + info (`user.new.duplicate`) | Deleted — idempotent replay |
+| Unknown error | `retry` + error | Left on queue → visibility timeout → redrive policy → DLQ |
+
+The redrive policy (`maxReceiveCount` → DLQ) is infrastructure configuration; the application never tracks receive counts. `POST /ops/user-new/redrive` starts a native SQS move task (`StartMessageMoveTask`) sending the DLQ messages back to the source queue — domain port `IDlqRedriver`, implementation `SqsDlqRedriver`, orchestrated by `OpsService` (`src/domain/ops/`). Boot order is telemetry → env → database → HTTP → worker; shutdown stops the worker **first** (drains the in-flight batch), then closes the HTTP server and the database. The message contract lives in `src/contracts/asyncapi.yaml`.
 
 ## OpenAPI contract (`src/contracts/service.yaml`)
 
@@ -129,5 +208,7 @@ defaults (20/0) and passes an `IPagination` to the repository (`skip`/`limit`).
 
 | File | Role |
 | --- | --- |
-| `src/main.ts` | Production/dev: telemetry + `Server` + controllers via factories |
+| `src/main.ts` | Production/dev: telemetry + `Server` + controllers via factories + `UserNewWorkerFactory` (SQS worker) |
 | `src/__tests__/configApp.ts` | `Server` instance used by integration tests — **must register the same controllers** |
+
+Controllers registered today: `UserController` and `OpsController` (DLQ redrive + search by correlation id).

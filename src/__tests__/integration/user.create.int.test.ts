@@ -1,46 +1,62 @@
-import mongoose from 'mongoose';
+import { randomUUID } from 'crypto';
+import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
+import { mockClient } from 'aws-sdk-client-mock';
+import 'aws-sdk-client-mock-jest';
 import supertest from 'supertest';
 import { app } from '../../../jest/setup-integration-tests';
-import { Muser } from '../../infrastructure/db/mongo/models/user.model';
+import { UserRepositoryRead } from '../../infrastructure/repository/user/user.repository.read';
 import { IUser } from '../../domain/user/interfaces/user.interface';
+
+const userRepositoryRead = new UserRepositoryRead();
+const sqsMock = mockClient(SQSClient);
 let paramsCreate: IUser;
 
 beforeEach(async () => {
+  sqsMock.reset();
   paramsCreate = {
-    id: new mongoose.Types.ObjectId().toHexString(),
-    email: `create-${new mongoose.Types.ObjectId().toHexString()}@email.com`,
+    id: randomUUID(),
+    email: `create-${randomUUID()}@email.com`,
     name: 'Whitebeard',
     createdAt: new Date(),
   };
 });
 
 describe('When we try to create a valid user', () => {
-  it('should return success when we try to create a valid user', async () => {
-    const { body, statusCode } = await supertest(app.app)
+  it('should accept the request and publish USER.NEW with the request cid', async () => {
+    const { body, statusCode, headers } = await supertest(app.app)
       .post(`/users`)
       .send(paramsCreate);
 
-    const userInDb = await Muser.findOne({ id: paramsCreate.id });
+    expect(statusCode).toBe(202);
+    expect(body.message).toBe('User creation accepted');
+    expect(body.cid).toBe(headers.cid);
 
-    expect(body).toMatchObject({
+    const [call] = sqsMock.commandCalls(SendMessageCommand);
+    const input = call.args[0].input;
+    expect(JSON.parse(input.MessageBody as string)).toEqual({
       ...paramsCreate,
       createdAt: paramsCreate.createdAt.toISOString(),
     });
-    expect(body._id).toBeUndefined();
-    expect(statusCode).toBe(201);
-    expect(userInDb).toMatchObject({ ...paramsCreate });
+    expect(input.MessageAttributes?.cid?.StringValue).toBe(body.cid);
+
+    // Nothing is persisted synchronously — the consumer does that.
+    await expect(
+      userRepositoryRead.findUserById(paramsCreate.id),
+    ).resolves.toBeNull();
   });
 });
 
 describe('When we create a user without providing createdAt', () => {
-  it('should return 201 with a server-generated createdAt', async () => {
+  it('should accept it and publish a server-generated createdAt', async () => {
     const { id, name, email } = paramsCreate;
-    const { body, statusCode } = await supertest(app.app)
+    const { statusCode } = await supertest(app.app)
       .post(`/users`)
       .send({ id, name, email });
 
-    expect(statusCode).toBe(201);
-    expect(new Date(body.createdAt).getTime()).not.toBeNaN();
+    expect(statusCode).toBe(202);
+    const [call] = sqsMock.commandCalls(SendMessageCommand);
+    const published = JSON.parse(call.args[0].input.MessageBody as string);
+    expect(new Date(published.createdAt).getTime()).not.toBeNaN();
   });
 });
 
@@ -51,21 +67,6 @@ describe('When we try to create a user with an invalid email', () => {
       .send({ ...paramsCreate, email: 'not-an-email' });
 
     expect(statusCode).toBe(400);
-  });
-});
-
-describe('When we try to create a user with an email already in use', () => {
-  it('should return 409 with the contract error shape', async () => {
-    await supertest(app.app).post(`/users`).send(paramsCreate);
-
-    const { body, statusCode } = await supertest(app.app)
-      .post(`/users`)
-      .send({ ...paramsCreate, id: new mongoose.Types.ObjectId().toHexString() });
-
-    expect(statusCode).toBe(409);
-    expect(body).toMatchObject({
-      message: 'A user with this email already exists',
-      status: 409,
-    });
+    expect(sqsMock).not.toHaveReceivedCommand(SendMessageCommand);
   });
 });

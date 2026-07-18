@@ -13,12 +13,12 @@ logs with the **OTel `trace_id` on every log line** (log ↔ trace correlation).
 ### Initialization order (critical)
 
 ```ts
-// src/main.ts — FIRST line, before any express/mongoose import:
+// src/main.ts — FIRST line, before any express/aws-sdk import:
 import './infrastructure/telemetry/tracing';
 ```
 
 Auto-instrumentation works by patching modules at `require` time — if express or
-mongoose load first, there are no spans. Never move this import.
+the AWS SDK load first, there are no spans. Never move this import.
 
 ### Environment variables (see `.env.example`)
 
@@ -68,7 +68,7 @@ absent — the format is a no-op without a valid span.
 
 Auto-instrumentation (`@opentelemetry/auto-instrumentations-node`, with
 `instrumentation-fs` disabled) already creates spans for: HTTP server/client,
-Express routes (including middlewares) and Mongoose/MongoDB operations.
+Express routes (including middlewares) and AWS SDK/DynamoDB operations.
 
 For relevant business operations, create manual spans in the service:
 
@@ -95,6 +95,53 @@ async createUser(params: IParamsCreateUser): Promise<IUser> {
 Every `Logger.*` call inside `startActiveSpan` inherits the `trace_id`/`span_id`
 automatically.
 
+## Context propagation from SQS messages
+
+HTTP requests get their context from headers (Express middleware); SQS messages
+carry it in **MessageAttributes**: `traceparent`/`tracestate` (W3C, injected
+automatically by the aws-sdk instrumentation on `sendMessage` and explicitly by
+`UserNewProducerSqs`) and `cid` (the legacy correlation id).
+
+On the consumer side (`UserNewConsumer`), before anything else:
+
+1. `ContextAsyncHooks.getTrackId(attributes)` resolves the cid — precedence:
+   explicit `cid` attribute > `traceparent` trace-id segment > newly generated.
+2. `ContextAsyncHooks.asyncLocalStorage.run({ cid }, ...)` establishes the cid
+   scope for the whole processing.
+3. `propagation.extract` + `tracer.startActiveSpan(kind: CONSUMER)` resume the
+   OTel trace, so the DynamoDB spans emitted while persisting become children
+   of the message trace.
+
+Net effect: every log line from consumer → service → repository → SDK call
+carries the same `cid` and `trace_id` that came in the message — the track id
+travels from the producer all the way to the database operation. With
+`OTEL_SDK_DISABLED=true` the OTel steps are no-ops but cid propagation keeps
+working.
+
+## The cid ends inside the database
+
+`UserRepositoryWrite.createUser` reads the current tracking context at write
+time and stores the `cid` as an attribute of the DynamoDB item (sparse
+`cid-index` GSI). The full chain for the async write path:
+
+```
+POST /users (cid header or generated)
+  → 202 response body { cid } + `cid` response header
+  → USER.NEW MessageAttributes (cid + traceparent)
+  → consumer ALS scope
+  → item attribute `cid` in DynamoDB
+  → GET /ops/users?cid=<cid> finds the created user
+```
+
+This makes any request traceable end to end with a single id: logs (`cid`),
+traces (`trace_id`) and data (`cid` on the item).
+
+Idempotency-related events worth alerting on: `user.new.duplicate` (info —
+idempotent replays; expected under at-least-once delivery) and
+`user.email_guard.release_failed` (warn — an email guard could not be
+released and blocks that email until fixed; see the guard table in
+`docs/architecture.md`).
+
 ## Tests
 
 - `.env.test` sets `OTEL_SDK_DISABLED=true` — no exporter/spans in tests.
@@ -109,7 +156,7 @@ automatically.
    ```bash
    docker run --rm -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one:latest
    ```
-2. `cp .env.example .env` (adjust `DATABASE_URI` if needed) and `yarn dev`.
+2. `cp .env.example .env` (adjust `AWS_REGION`/`DYNAMODB_ENDPOINT` if needed) and `yarn dev`.
 3. Make a request (`curl http://localhost:3000/users`) and check:
    - the JSON log on stdout contains `trace_id`/`span_id`;
    - the trace shows up at `http://localhost:16686` with the same `trace_id`.

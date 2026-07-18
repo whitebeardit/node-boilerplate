@@ -1,6 +1,6 @@
 {
   "name": "boilerplate",
-  "description": "Node.js + TypeScript REST API boilerplate: Clean Architecture, OpenAPI-first validation, MongoDB, OpenTelemetry with trace-correlated logs",
+  "description": "Node.js + TypeScript REST API boilerplate: Clean Architecture, OpenAPI-first validation, DynamoDB, OpenTelemetry with trace-correlated logs",
   "version": "1.0.0",
   "main": "dist/src/main.js",
   "engines": {
@@ -33,16 +33,17 @@
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/release-notes-generator": "^14.0.1",
     "@types/jest": "^29.5.14",
-    "@types/mongodb-memory-server": "^2.3.0",
     "@types/node": "^22.10.1",
     "@types/supertest": "^6.0.2",
+    "aws-sdk-client-mock": "^4.1.0",
+    "aws-sdk-client-mock-jest": "^4.1.0",
+    "dynalite": "^4.0.0",
     "eslint": "^9.16.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.3",
     "globals": "^15.12.0",
     "husky": "^9.1.7",
     "jest": "^29.7.0",
-    "mongodb-memory-server": "^10.1.2",
     "nyc": "^18.0.0",
     "prettier": "^3.5.0",
     "semantic-release": "^24.2.0",
@@ -57,6 +58,10 @@
   "license": "ISC",
   "repository": "git@github.com:whitebeardit/node-boilerplate.git",
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1090.0",
+    "@aws-sdk/client-sqs": "^3.1090.0",
+    "@aws-sdk/lib-dynamodb": "^3.1090.0",
+    "@aws-sdk/util-dynamodb": "^3.996.7",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/auto-instrumentations-node": "^0.78.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.220.0",
@@ -67,7 +72,6 @@
     "express": "^4.19.2",
     "express-openapi-validator": "^4.13.8",
     "helmet": "^8.0.0",
-    "mongoose": "^8.8.3",
     "traceability": "^3.2.2"
   }
 }

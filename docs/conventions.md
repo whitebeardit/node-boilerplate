@@ -18,8 +18,7 @@ Lowercase with dots as the type separator: `<feature>.<type>[.<variant>].ts`.
 | Repository contract | `<feature>.repository.read.ts` / `.write.ts` | `src/domain/user/repository/user.repository.read.ts` |
 | Service | `<feature>.service.ts` | `src/domain/user/service/user.service.ts` |
 | Repository implementation | `<feature>.repository.read.ts` / `.write.ts` | `src/infrastructure/repository/user/user.repository.write.ts` |
-| Mongoose schema | `<feature>.schema.ts` | `src/infrastructure/db/mongo/schema/user.schema.ts` |
-| Mongoose model | `<feature>.model.ts` | `src/infrastructure/db/mongo/models/user.model.ts` |
+| DynamoDB table definition | `<feature>.table.ts` | `src/infrastructure/db/dynamo/tables/user.table.ts` |
 | Controller | `<feature>.controller.ts` | `src/interfaces/http/controllers/user.controller.ts` |
 | Controller interface | `controller.interface.ts` | `src/interfaces/http/controllers/controller.interface.ts` |
 | Factory | `<feature>.<type>.factory.ts` | `src/infrastructure/config/factories/user.service.factory.ts` |
@@ -35,13 +34,13 @@ No exceptions — every file follows the pattern above.
 | Domain interface | `I` + PascalCase | `IUser`, `IUserService`, `IController`, `IPagination` |
 | Parameter interface | `IParams` + action/context | `IParamsCreateUser`, `IParamsUpdateUser`, `IParamsUserService` |
 | Repository contract | `I<Feature>Repository<Read\|Write>` | `IUserRepositoryRead`, `IUserRepositoryWrite` |
-| Persistence interface | `IM` + PascalCase, extends the domain interface | `IMUser extends IUser` (adds `_id: Types.ObjectId`; lives in the schema file) |
+| Persistence interface | `IM` + PascalCase, derived from the domain interface | `IMUser extends Omit<IUser, 'createdAt'>` (dates stored as ISO strings; lives in the table file) |
 | Class | PascalCase, no prefix | `UserService`, `UserController`, `Server`, `User` |
 | Factory | `<Feature><Type>Factory` | `UserServiceFactory`, `UserControllerFactory` |
-| Mongoose model | `M` + lowercase, typed with `IM*` | `Muser = mongoose.model<IMUser>('user', userSchema)` |
-| Mongoose schema | camelCase + `Schema`, typed with `IM*` | `userSchema = new mongoose.Schema<IMUser>({...})` |
+| Table definition | camelCase + `TableDefinition` | `userTableDefinition: CreateTableCommandInput` |
+| Item mappers | `to<Feature>` / `to<Feature>Item` | `toUser(item: IMUser): IUser`, `toUserItem(user: IUser): IMUser` |
 | Variables/properties | camelCase | `userRepositoryRead`, `apiSpecLocation` |
-| Constants | UPPER_SNAKE_CASE | `OPEN_API_SPEC_FILE_LOCATION`, `HIDE_MONGO_INTERNAL_FIELDS`, `DEFAULT_LIST_LIMIT` |
+| Constants | UPPER_SNAKE_CASE | `OPEN_API_SPEC_FILE_LOCATION`, `USER_TABLE_NAME`, `DEFAULT_LIST_LIMIT` |
 | Enum (Agents.md, no example in code yet) | `E` + PascalCase, UPPER members | `EStatus.ACTIVE` |
 
 Methods have intent-revealing names: `findUserByEmail`, `updateUserById`,
@@ -55,7 +54,7 @@ Methods have intent-revealing names: `findUserByEmail`, `updateUserById`,
 - **Controllers are thin**: extract data from `req`, call the service and map the
   success response. No business rules and no error mapping — errors go to `next(error)`.
 - **Domain errors** in `src/domain/errors/`: `DomainError` (base, carries `status`),
-  `NotFoundError` (404), `ConflictError` (409). Services throw these
+  `BadRequestError` (400), `NotFoundError` (404), `ConflictError` (409). Services throw these
   (`throw new NotFoundError('User not found')`) and **never** decide HTTP status;
   the central error handler in `server.ts` does the mapping. Do not re-wrap
   errors in `new Error(string)` — that loses the type and the stack.
@@ -78,6 +77,7 @@ All error responses follow the contract's `Error`/`ValidationError` schemas
 | Invalid payload (contract) | 400 | `{ message, status, errors[] }` | OpenApiValidator → handler |
 | Not found | 404 | `{ message: 'User not found', status: 404 }` | `NotFoundError` → handler |
 | Conflict (e.g. duplicated email) | 409 | `{ message, status: 409 }` | `ConflictError` → handler |
+| Malformed pagination cursor | 400 | `{ message, status: 400 }` | `BadRequestError` → handler |
 | Unexpected error | 500 | `{ message: 'Internal Server Error', status: 500 }` | handler (with structured log) |
 
 ## OpenAPI contract (`src/contracts/service.yaml`)
@@ -90,7 +90,7 @@ compatible with the current contract:
 - Route resources: kebab-case, plural (`/users`, `/user-profiles`) — this repo does not use an `/api` prefix
 - Every endpoint documented with success **and** error examples; types with
   specific formats (`format: email`, `date-time`) and limits where applicable
-- List endpoints take `limit`/`offset` query params with sensible bounds
+- List endpoints take `limit`/`cursor` query params with sensible bounds and respond `{ items, nextCursor }`
 
 ## Style and tooling
 

@@ -1,6 +1,5 @@
 import path from 'path';
 import supertest from 'supertest';
-import mongoose from 'mongoose';
 import {
   NextFunction,
   Request,
@@ -10,6 +9,7 @@ import {
 } from 'express';
 import { Server } from '../../interfaces/http/server';
 import { IController } from '../../interfaces/http/controllers/controller.interface';
+import { IDatabase } from '../../infrastructure/db/database.interface';
 
 const OPEN_API_SPEC_FILE_LOCATION = path.resolve(
   __dirname,
@@ -84,28 +84,27 @@ describe('When we create a server without an api spec', () => {
   });
 });
 
-describe('When we set up the database without a URI', () => {
+describe('When we set up the database without providing one', () => {
   it('should fail fast with a clear message', async () => {
-    await expect(app.databaseSetup()).rejects.toThrow(
-      'Database URI not provided',
-    );
+    await expect(app.databaseSetup()).rejects.toThrow('Database not provided');
   });
 });
 
-describe('When we set up and close the database with a URI', () => {
-  it('should connect through mongoose and disconnect cleanly', async () => {
-    const connectSpy = jest
-      .spyOn(mongoose, 'connect')
-      .mockImplementation(async () => mongoose);
-    app.DATABASE_URI = 'mongodb://localhost/unit-test';
+describe('When we set up and close the database', () => {
+  it('should delegate to the provided database adapter', async () => {
+    const database: IDatabase = {
+      start: jest.fn().mockResolvedValue(undefined),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    app.database = database;
 
     await app.databaseSetup();
-    expect(connectSpy).toHaveBeenCalledWith('mongodb://localhost/unit-test');
+    expect(database.start).toHaveBeenCalledTimes(1);
 
     await app.closeDatabase();
+    expect(database.close).toHaveBeenCalledTimes(1);
 
-    connectSpy.mockRestore();
-    app.DATABASE_URI = undefined;
+    app.database = undefined;
   });
 });
 

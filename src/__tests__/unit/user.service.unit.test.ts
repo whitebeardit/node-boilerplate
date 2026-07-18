@@ -1,6 +1,8 @@
 import { UserService } from '../../domain/user/service/user.service';
 import { IUserRepositoryRead } from '../../domain/user/repository/user.repository.read';
 import { IUserRepositoryWrite } from '../../domain/user/repository/user.repository.write';
+import { IUserNewProducer } from '../../domain/user/messaging/user.new.producer';
+import { User } from '../../domain/user/user.entity';
 import { IUser } from '../../domain/user/interfaces/user.interface';
 import { ConflictError } from '../../domain/errors/conflict.error';
 import { NotFoundError } from '../../domain/errors/not-found.error';
@@ -14,6 +16,7 @@ const A_USER: IUser = {
 
 let userRepositoryRead: jest.Mocked<IUserRepositoryRead>;
 let userRepositoryWrite: jest.Mocked<IUserRepositoryWrite>;
+let userNewProducer: jest.Mocked<IUserNewProducer>;
 let userService: UserService;
 
 beforeEach(() => {
@@ -21,13 +24,34 @@ beforeEach(() => {
     findUserById: jest.fn(),
     findUserByEmail: jest.fn(),
     listUsers: jest.fn(),
+    listUsersByCid: jest.fn(),
   };
   userRepositoryWrite = {
     createUser: jest.fn(),
     updateUserById: jest.fn(),
     deleteUserById: jest.fn(),
   };
-  userService = new UserService({ userRepositoryRead, userRepositoryWrite });
+  userNewProducer = {
+    publishUserNew: jest.fn(),
+  };
+  userService = new UserService({
+    userRepositoryRead,
+    userRepositoryWrite,
+    userNewProducer,
+  });
+});
+
+describe('When we enqueue a user creation', () => {
+  it('should publish the built user entity as USER.NEW', async () => {
+    userNewProducer.publishUserNew.mockResolvedValue(undefined);
+
+    await userService.enqueueUserCreation(A_USER);
+
+    expect(userNewProducer.publishUserNew).toHaveBeenCalledWith(
+      new User(A_USER.id, A_USER.name, A_USER.email, A_USER.createdAt),
+    );
+    expect(userRepositoryWrite.createUser).not.toHaveBeenCalled();
+  });
 });
 
 describe('When we create a user', () => {
@@ -134,26 +158,33 @@ describe('When we delete a user', () => {
 });
 
 describe('When we list users', () => {
-  it('should apply default pagination when none is provided', async () => {
-    userRepositoryRead.listUsers.mockResolvedValue([A_USER]);
+  it('should apply the default limit when no pagination is provided', async () => {
+    userRepositoryRead.listUsers.mockResolvedValue({ items: [A_USER] });
 
-    const users = await userService.listUsers({ name: A_USER.name });
+    const page = await userService.listUsers({ name: A_USER.name });
 
-    expect(users).toEqual([A_USER]);
+    expect(page).toEqual({ items: [A_USER] });
     expect(userRepositoryRead.listUsers).toHaveBeenCalledWith(
       { name: A_USER.name },
-      { limit: 20, offset: 0 },
+      { limit: 20, cursor: undefined },
     );
   });
 
   it('should forward the pagination provided by the caller', async () => {
-    userRepositoryRead.listUsers.mockResolvedValue([]);
+    userRepositoryRead.listUsers.mockResolvedValue({
+      items: [],
+      nextCursor: 'next-token',
+    });
 
-    await userService.listUsers({}, { limit: 5, offset: 10 });
+    const page = await userService.listUsers(
+      {},
+      { limit: 5, cursor: 'a-token' },
+    );
 
+    expect(page.nextCursor).toBe('next-token');
     expect(userRepositoryRead.listUsers).toHaveBeenCalledWith(
       {},
-      { limit: 5, offset: 10 },
+      { limit: 5, cursor: 'a-token' },
     );
   });
 });

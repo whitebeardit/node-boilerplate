@@ -26,8 +26,8 @@ pushes to `main`/`stage` and on pull requests.
 | `jest/jest.config.ts` | Base (unit): `rootDir: '../src'`, `testRegex: '.*\.unit.test\.ts$'`, `setupFiles: ['../jest/setup-tests.ts']`, 20s timeout, `bail: 1` |
 | `jest/jest.int-config.ts` | Extends the base: `testRegex: '.*\.int.test\.ts$'`, `globalSetup`/`globalTeardown`, `setupFilesAfterEnv: setup-integration-tests.ts` |
 | `jest/setup-tests.ts` | Loads `.env.test` via dotenv (includes `OTEL_SDK_DISABLED=true`) |
-| `jest/start-integration.ts` / `stop-integration.ts` | Starts/stops `mongodb-memory-server` (ReplSet) — no local Mongo needed |
-| `jest/setup-db.ts` | `MongooseDatabase` class (connection/teardown) |
+| `jest/start-integration.ts` / `stop-integration.ts` | Starts/stops `dynalite` (in-memory DynamoDB) and exports `DYNAMODB_ENDPOINT` — no local DynamoDB needed |
+| `jest/dynalite.d.ts` | Type declaration for `dynalite` (the package ships no types) |
 | `jest/setup-integration-tests.ts` | `beforeAll` calls `bootstrapTest()` and exports `app` (a `Server` instance) |
 
 Support inside `src/`:
@@ -35,7 +35,7 @@ Support inside `src/`:
 - `src/__tests__/configApp.ts` — the `Server` instance for tests. **Every new
   controller must be registered here**, in addition to `src/main.ts`, otherwise
   integration tests get 404/contract errors.
-- `src/__tests__/testUtils.ts` — `bootstrapTest()` connects the `MongooseDatabase` and returns `{ dbInstance, app }`.
+- `src/__tests__/testUtils.ts` — `bootstrapTest()` starts the `DynamoDatabase` (creates the table on dynalite) and returns `{ dbInstance, app }`.
 
 ## Naming (mandatory — enforced by `testRegex`)
 
@@ -69,11 +69,40 @@ describe('When we create a user', () => {
 Watch out for:
 
 - `app.app` is the `express.Application` inside the `Server` class.
-- The `mongodb-memory-server` is global (via `globalSetup`); tests run with `--runInBand`
+- The `dynalite` server is global (via `globalSetup`); tests run with `--runInBand`
   and data **persists across suites** — use unique ids/emails per test.
 - The OpenApiValidator is active in tests: payloads outside the contract return 400,
   responses outside the contract return 500 — update `src/contracts/service.yaml` together.
-- Assert that Mongo internals do not leak: `expect(body._id).toBeUndefined()`.
+- Seed and inspect the database through the repositories
+  (`UserRepositoryWrite`/`UserRepositoryRead`), never through the AWS SDK
+  directly — the tests stay driver-agnostic.
+
+## SQS tests (transport mocked, stack real)
+
+SQS is mocked at the client boundary with `aws-sdk-client-mock`
+(`mockClient(SQSClient)`) — the same level dynalite mocks DynamoDB. The worker
+integration test (`user.new.worker.int.test.ts`) runs the **real**
+`UserNewWorkerFactory` wiring (consumer → service → repositories → dynalite)
+and only fakes the queue: `resolvesOnce({ Messages: [...] })` for the batches
+under test. Two rules keep these tests stable:
+
+- The default receive behavior must be a **throttled** empty poll
+  (`callsFake` resolving `{ Messages: [] }` after ~25ms) — an instantly
+  resolving mock lets the poll loop free-run (in production the 20s long poll
+  paces it).
+- Wait for an observable effect (`sqsMock.commandCalls(DeleteMessageCommand)`)
+  before calling `worker.stop()` — never sleep for fixed durations.
+- dynalite has **no TransactWriteItems** — atomicity in tests (and in code)
+  relies on single-item conditional writes; the email-guard saga in
+  `user.idempotency.int.test.ts` is the reference for testing uniqueness and
+  self-healing scenarios.
+- The async e2e test (`user.create.async.e2e.int.test.ts`) chains the real
+  stack: POST /users → capture the published `SendMessageCommand` input
+  **before** `sqsMock.reset()` (reset wipes recorded calls) → replay it as a
+  `ReceiveMessageCommand` result for the real worker → assert the user landed
+  in dynalite with the same cid → `GET /ops/users?cid=`. One
+  `mockClient(SQSClient)` serves producer and worker (they share the
+  `sqsClient` singleton).
 
 ## Unit tests
 

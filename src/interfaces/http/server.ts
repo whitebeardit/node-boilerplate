@@ -8,7 +8,7 @@ import express, {
 import { ContextAsyncHooks, Logger } from 'traceability';
 import { Server as httpServer } from 'http';
 import { IController } from './controllers/controller.interface';
-import mongoose from 'mongoose';
+import { IDatabase } from '../../infrastructure/db/database.interface';
 import * as OpenApiValidator from 'express-openapi-validator';
 import helmet from 'helmet';
 import { HttpError } from 'express-openapi-validator/dist/framework/types';
@@ -21,7 +21,7 @@ export class Server {
 
   public apiSpecLocation?: string;
 
-  public DATABASE_URI?: string;
+  public database?: IDatabase;
 
   private readonly timeoutMilliseconds?: number;
 
@@ -36,13 +36,13 @@ export class Server {
     middlewaresToStart?: Array<RequestHandler>;
     controllers?: Array<IController>;
     apiSpecLocation?: string;
-    databaseURI?: string;
+    database?: IDatabase;
     timeoutMilliseconds?: number;
   }) {
     this.app = express();
     this.port = appInit.port;
     this.apiSpecLocation = appInit.apiSpecLocation;
-    this.DATABASE_URI = appInit.databaseURI;
+    this.database = appInit.database;
     this.timeoutMilliseconds = appInit.timeoutMilliseconds;
 
     this.app.get('/health', (req: Request, res: Response) => {
@@ -118,27 +118,14 @@ export class Server {
   }
 
   public async databaseSetup() {
-    if (!this.DATABASE_URI) {
-      throw new Error('Database URI not provided');
+    if (!this.database) {
+      throw new Error('Database not provided');
     }
-    mongoose.connection.once('connected', () => {
-      Logger.info('Connected to MongoDB', { eventName: 'database.connected' });
-    });
-    mongoose.connection?.on('error', (err) => {
-      Logger.error(`Error connecting to MongoDB: ${err.message}`, {
-        eventName: 'database.connection_error',
-      });
-    });
-    await mongoose.connect(this.DATABASE_URI);
+    await this.database.start();
   }
 
   public async closeDatabase() {
-    mongoose.connection.once('disconnected', () => {
-      Logger.info('Mongoose disconnected', {
-        eventName: 'database.disconnected',
-      });
-    });
-    await mongoose.disconnect();
+    await this.database?.close();
   }
 
   public listen(): httpServer {

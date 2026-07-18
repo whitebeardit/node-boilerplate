@@ -1,5 +1,6 @@
 import { IUserRepositoryRead } from '../repository/user.repository.read';
 import { IUserRepositoryWrite } from '../repository/user.repository.write';
+import { IUserNewProducer } from '../messaging/user.new.producer';
 import { IUser } from '../interfaces/user.interface';
 import {
   IParamsCreateUser,
@@ -9,19 +10,43 @@ import {
 } from '../interfaces/user.service.interface';
 import { ConflictError } from '../../errors/conflict.error';
 import { NotFoundError } from '../../errors/not-found.error';
-import { IPagination } from '../../common/pagination.interface';
+import {
+  IPaginatedResult,
+  IPagination,
+} from '../../common/pagination.interface';
 import { User } from '../user.entity';
 
 const DEFAULT_LIST_LIMIT = 20;
-const DEFAULT_LIST_OFFSET = 0;
 
 export class UserService implements IUserService {
   private userRepositoryRead: IUserRepositoryRead;
   private userRepositoryWrite: IUserRepositoryWrite;
+  private userNewProducer: IUserNewProducer;
 
-  constructor({ userRepositoryRead, userRepositoryWrite }: IParamsUserService) {
+  constructor({
+    userRepositoryRead,
+    userRepositoryWrite,
+    userNewProducer,
+  }: IParamsUserService) {
     this.userRepositoryRead = userRepositoryRead;
     this.userRepositoryWrite = userRepositoryWrite;
+    this.userNewProducer = userNewProducer;
+  }
+
+  /**
+   * Enqueue a user creation: publishes USER.NEW and returns once the message
+   * is on the queue. Persistence (and the email-uniqueness rule) happens
+   * asynchronously when the consumer processes the message.
+   * @param params - The user data to enqueue
+   */
+  async enqueueUserCreation(params: IParamsCreateUser): Promise<void> {
+    const user = new User(
+      params.id,
+      params.name,
+      params.email,
+      params.createdAt,
+    );
+    await this.userNewProducer.publishUserNew(user);
   }
 
   /**
@@ -107,17 +132,16 @@ export class UserService implements IUserService {
   }
 
   /**
-   * List users with optional filters and pagination
+   * List users with optional filters and cursor pagination
    * @param filter - Filters for the query
-   * @param pagination - Optional limit/offset (defaults: 20/0)
-   * @returns An array of users
+   * @param pagination - Optional limit (default: 20) and cursor from the previous page
+   * @returns The page of users plus the cursor for the next page, if any
    */
   async listUsers(
     filter: Partial<IUser> = {},
     pagination: Partial<IPagination> = {},
-  ): Promise<IUser[]> {
-    const { limit = DEFAULT_LIST_LIMIT, offset = DEFAULT_LIST_OFFSET } =
-      pagination;
-    return this.userRepositoryRead.listUsers(filter, { limit, offset });
+  ): Promise<IPaginatedResult<IUser>> {
+    const { limit = DEFAULT_LIST_LIMIT, cursor } = pagination;
+    return this.userRepositoryRead.listUsers(filter, { limit, cursor });
   }
 }

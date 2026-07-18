@@ -17,21 +17,21 @@ implementation** of this standard — every stub below mirrors its real code.
 | ├─ Repository contracts | `src/domain/<feature>/repository/` | `I<Feature>RepositoryRead`, `I<Feature>RepositoryWrite` |
 | ├─ Service | `src/domain/<feature>/service/` | `<Feature>Service implements I<Feature>Service` |
 | ├─ Entity | `src/domain/<feature>/<feature>.entity.ts` | `<Feature> implements I<Feature>` with `readonly` props |
-| **Domain errors** | `src/domain/errors/` | `DomainError` (base with `status`), `NotFoundError` (404), `ConflictError` (409) |
+| **Domain errors** | `src/domain/errors/` | `DomainError` (base with `status`), `BadRequestError` (400), `NotFoundError` (404), `ConflictError` (409) |
 | **Shared domain types** | `src/domain/common/` | Cross-feature types (e.g. `IPagination`) |
 | **HTTP layer** | `src/interfaces/http/` | `server.ts` (Express + middlewares + central error handler) |
 | ├─ Controllers | `src/interfaces/http/controllers/` | Thin adapters implementing `IController` (`controller.interface.ts`) |
 | **Infrastructure** | `src/infrastructure/` | External concerns |
 | ├─ Repository implementations | `src/infrastructure/repository/<feature>/` | Same file names as the domain contracts |
-| ├─ DB (Mongo) | `src/infrastructure/db/mongo/{schema,models}/` | Typed Mongoose schemas (`Schema<IM*>`) & models (`model<IM*>`) |
+| ├─ DB (DynamoDB) | `src/infrastructure/db/dynamo/` | Client (`dynamo.client.ts`), lifecycle adapter (`dynamo.database.ts`) and `tables/` (typed table definitions + `IM*` item mappers) |
 | ├─ Config | `src/infrastructure/config/` | `env.ts` (fail-fast env validation) |
 | ├─ Factories (composition root) | `src/infrastructure/config/factories/` | `<feature>.controller.factory.ts`, `<feature>.service.factory.ts` |
 | ├─ Telemetry | `src/infrastructure/telemetry/` | OpenTelemetry SDK bootstrap + trace-context log injection |
-| ├─ Messaging *(when needed)* | `src/infrastructure/messaging/<event>/` | Kafka/Rabbit producers & consumers |
+| ├─ Messaging | `src/infrastructure/messaging/<event>/` | SQS consumers & producers (`worker.interface.ts`, generic `SqsWorker` in `messaging/sqs/`) |
 | ├─ External services *(when needed)* | `src/infrastructure/external/services/` | HTTP/GRPC clients for third-party APIs |
 | **Contracts** | `src/contracts/service.yaml` | OpenAPI 3.0 spec — validated at runtime (requests **and** responses) |
 | **Tests** | `src/__tests__/{unit,integration}/` | Mandatory suffixes `.unit.test.ts` / `.int.test.ts` |
-| **Test bootstrap** | `jest/` (outside `src/`) | Jest configs, mongodb-memory-server setup |
+| **Test bootstrap** | `jest/` (outside `src/`) | Jest configs, dynalite (in-memory DynamoDB) setup |
 | **Entry point** | `src/main.ts` | Telemetry import (first line) → env → `Server` → graceful shutdown |
 | **Root config** | `./` | `package.json`, `tsconfig.json`, `eslint.config.mjs`, `.prettierrc`, `commitlint.config.js`, `.env.example`, `Dockerfile`, `.github/workflows/ci.yml` |
 
@@ -55,7 +55,7 @@ Lowercase with dots as the type separator — `<feature>.<type>[.<variant>].ts`:
 | --- | --- | --- | --- |
 | **Domain interface** | `I` | Pascal | `IUser`, `IUserService`, `IPagination` |
 | **Parameter object** | `IParams` | Pascal | `IParamsCreateUser`, `IParamsUserService` |
-| **Persistence interface** (Mongo) | `IM` | Pascal | `IMUser extends IUser` |
+| **Persistence interface** (DynamoDB) | `IM` | Pascal | `IMUser extends Omit<IUser, 'createdAt'>` |
 | **Enum** | `E` | Pascal | `EStatus` with members `ACTIVE`, `PENDING` |
 
 Other rules:
@@ -67,37 +67,36 @@ Other rules:
 
 ### 2.3 IM Interfaces Pattern
 
-Persistence documents need Mongo-specific fields. The `IM*` interface extends
-the domain interface and lives **in the schema file** (not the model file) to
-keep the schema → model import direction free of cycles:
+Persistence items need storage-compatible types (DynamoDB has no native date
+type). The `IM*` interface derives from the domain interface and lives **in the
+table file**, next to the table definition and the item mappers:
 
 ```ts
-// src/infrastructure/db/mongo/schema/user.schema.ts
-import mongoose, { Types } from 'mongoose';
+// src/infrastructure/db/dynamo/tables/user.table.ts
+import { CreateTableCommandInput } from '@aws-sdk/client-dynamodb';
 import { IUser } from '../../../../domain/user/interfaces/user.interface';
 
-export interface IMUser extends IUser {
-  _id: Types.ObjectId;
+export interface IMUser extends Omit<IUser, 'createdAt'> {
+  createdAt: string; // ISO-8601
 }
 
-export const userSchema = new mongoose.Schema<IMUser>({
-  id: { type: String, required: true, unique: true },
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  createdAt: { type: Date, required: true, default: Date.now },
-});
+export const USER_TABLE_NAME = env.usersTableName;
+export const USER_EMAIL_INDEX_NAME = 'email-index';
+
+export const userTableDefinition: CreateTableCommandInput = {
+  TableName: USER_TABLE_NAME,
+  BillingMode: 'PAY_PER_REQUEST',
+  KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
+  GlobalSecondaryIndexes: [/* email-index for lookups by email */],
+  // ...
+};
+
+export function toUserItem(user: IUser): IMUser { /* domain → item */ }
+export function toUser(item: IMUser): IUser { /* item → domain, field by field */ }
 ```
 
-```ts
-// src/infrastructure/db/mongo/models/user.model.ts
-import mongoose from 'mongoose';
-import { IMUser, userSchema } from '../schema/user.schema';
-
-export const Muser = mongoose.model<IMUser>('user', userSchema);
-```
-
-Models are prefixed with `M` (`Muser`). Repositories return plain domain
-objects: reads use `.lean<IUser>()` with a projection that hides `_id`/`__v`.
+Repositories return plain domain objects: every read/write maps through
+`toUser`, which picks fields explicitly so storage internals never leak.
 
 ---
 
@@ -108,7 +107,7 @@ objects: reads use `.lean<IUser>()` with a projection that hides `_id`/`__v`.
 ```ts
 // src/domain/user/interfaces/user.interface.ts
 export interface IUser {
-  id: string; // exposed id (string — not the Mongo ObjectId)
+  id: string; // exposed id (string — also the table partition key)
   name: string;
   email: string;
   createdAt: Date;
@@ -142,7 +141,8 @@ export class DomainError extends Error {
 }
 ```
 
-`NotFoundError` (404) and `ConflictError` (409) extend it. Services throw these
+`BadRequestError` (400), `NotFoundError` (404) and `ConflictError` (409)
+extend it. Services throw these
 typed errors; **only** the central error handler in `server.ts` maps them to
 HTTP responses in the contract shape (`{ message, status }`).
 
@@ -221,7 +221,7 @@ import { env } from './infrastructure/config/env'; // fail-fast validation
 const app = new Server({
   port: env.port,
   controllers: [UserControllerFactory.create()],
-  databaseURI: env.databaseUri,
+  database: new DynamoDatabase(),
   apiSpecLocation: OPEN_API_SPEC_FILE_LOCATION,
 });
 
@@ -249,7 +249,7 @@ Bootstrap-phase I/O happens **inside** `start()`, never at module load.
   `Logger.info('User created', { eventName: 'user.created', userId })`.
   Never `JSON.stringify` inside the message.
 * OpenTelemetry (`src/infrastructure/telemetry/`) auto-instruments Express,
-  Mongoose and HTTP. Every log emitted inside a span automatically gains
+  the AWS SDK (DynamoDB) and HTTP. Every log emitted inside a span automatically gains
   `trace_id`/`span_id`/`trace_flags` alongside the legacy `cid`.
 * Tests run with `OTEL_SDK_DISABLED=true`.
 
@@ -281,9 +281,9 @@ Bootstrap-phase I/O happens **inside** `start()`, never at module load.
 * **Unit**: mock all side-effects via the `I*` contracts (`jest.Mocked<I*>`);
   deterministic, <100ms per test.
 * **Integration**: real HTTP through supertest against the `Server` from
-  `jest/setup-integration-tests.ts`; mongodb-memory-server (no local Mongo);
-  data persists across suites — use unique ids/emails; assert Mongo internals
-  do not leak (`expect(body._id).toBeUndefined()`).
+  `jest/setup-integration-tests.ts`; dynalite in-memory DynamoDB (no local
+  database); data persists across suites — use unique ids/emails; seed and
+  inspect data through the repositories so tests stay driver-agnostic.
 * Coverage is enforced on the merged unit+int report because each suite covers
   different layers; runtime bootstrap (`main.ts`, telemetry SDK) is excluded.
 
@@ -293,8 +293,8 @@ Bootstrap-phase I/O happens **inside** `start()`, never at module load.
 
 When generating or editing code, **always**:
 
-1. **Naming & files** — `I*` domain, `IM*` persistence (in the schema file),
-   `E*` enums, `M*` models; files lowercase-with-dots.
+1. **Naming & files** — `I*` domain, `IM*` persistence (in the table file),
+   `E*` enums; files lowercase-with-dots.
 2. **Architecture** — thin controllers (`next(error)`), business rules and
    typed domain errors in services, thin repositories, wiring only in factories.
 3. **Contract-first** — update `src/contracts/service.yaml` in the same change
@@ -317,30 +317,51 @@ When generating or editing code, **always**:
 
 ### 8.2 Service layer
 * Central hub for business rules; throws typed domain errors.
-* Handle race conditions via DB constraints (unique indexes) and translate DB
-  conflicts into domain errors.
+* Handle race conditions via DB constraints (condition expressions such as
+  `attribute_not_exists`) and translate DB conflicts into domain errors.
+  Attributes that must be unique but are not the key (e.g. email) get a
+  **guard table** claimed with `attribute_not_exists(key) OR ownerId = :id`
+  before the main write — re-claims by the same owner make retries
+  idempotent (saga pattern; GSIs do not enforce uniqueness).
 
 ### 8.3 Repository layer
 * Thin CRUD wrappers; no domain logic, no try/catch re-wrapping.
-* Return plain domain objects (`.lean<IUser>()` + projection hiding `_id`/`__v`).
+* Return plain domain objects (map every item through `toUser` so storage
+  internals never leak).
 
 ### 8.4 Route naming
 * Resources in **kebab-case**, plural, no `/api` prefix: `/users`,
-  `/user-profiles`. List endpoints take `limit`/`offset` query params.
+  `/user-profiles`. List endpoints take `limit`/`cursor` query params and
+  respond `{ items, nextCursor }` (cursor pagination; `nextCursor` absent on
+  the last page).
 
 ### 8.5 Descriptive naming
 * Prefer intent-revealing identifiers (`findUserByEmail`), never generic ones.
 
 ---
 
-## 9  Messaging Producer Checklist (Kafka) *(when the project adds messaging)*
+## 9  Messaging Checklist (SQS)
 
-1. **Interface & implementation** — `I<Event>ProducerKafka` + class inside `src/infrastructure/messaging/<event>/`.
-2. **Service integration** — inject the producer interface via constructor.
-3. **Factory registration** — wire it in `src/infrastructure/config/factories/<feature>.service.factory.ts`.
-4. **Contract** — keep `src/contracts/asyncapi.yaml` updated with topics and schemas.
-5. **Service-layer calls** — call producers *after* successful repository operations.
-6. **Tests** — integration tests assert invocation via `jest.spyOn()`.
+### 9.1 Consumer
+
+1. **Handler** — `class <Event>Consumer implements ISqsMessageHandler` in `src/infrastructure/messaging/<event>/`, receiving the domain service **interface** via constructor. It is the messaging analog of a controller: parse/validate (payload parser throws `BadRequestError`), delegate, decide `'ack' | 'retry'` — business rules stay in the service.
+2. **Tracking context** — before the first log or service call, re-establish the context that came in the MessageAttributes: `ContextAsyncHooks.asyncLocalStorage.run({ cid }, ...)` (cid precedence: attribute > traceparent trace-id > generated) plus `propagation.extract` + a CONSUMER span, so every log carries `cid`/`trace_id` and downstream spans are children of the message trace.
+3. **Error policy** — duplicates (idempotent replays: `ConflictError`/conditional-check failures) → **info** `user.new.duplicate` + `'ack'`; invalid payload → warn `user.new.dropped` + `'ack'`; anything else → error + `'retry'` (visibility timeout → redrive policy → DLQ, configured in infrastructure — never track receive counts in code).
+4. **Worker & factory** — reuse the generic `SqsWorker` (long poll, delete on ack, drain on stop); wire in `src/infrastructure/config/factories/messaging/<event>.worker.factory.ts` with `static create(): IWorker`; start after the HTTP server, stop **first** on shutdown.
+5. **Contract** — keep `src/contracts/asyncapi.yaml` updated (payload schema, tracking headers, operational notes).
+6. **Tests** — unit for handler/payload; integration with `aws-sdk-client-mock` on `SQSClient` and the real service/repository stack.
+
+### 9.2 Producer
+
+1. **Port in the domain, implementation in infrastructure** — the contract (`I<Event>Producer`, e.g. `IUserNewProducer`) lives in `src/domain/<feature>/messaging/` (like repository contracts), so domain services can depend on it; the SQS class (`<Event>ProducerSqs`) lives in `src/infrastructure/messaging/<event>/` and implements it.
+2. **Context injection** — inject `traceparent`/`tracestate` (`propagation.inject`) and the current `cid` as MessageAttributes so consumers resume the same trace (cid must be present even with the OTel SDK disabled). On `.fifo` queues also set `MessageGroupId`/`MessageDeduplicationId` to the entity id — the idempotency key.
+3. **Service integration** — inject the producer port via constructor (`IParams*Service`); async write endpoints publish and answer 202 with the cid.
+4. **Factory registration** — wire it in `src/infrastructure/config/factories/<feature>.service.factory.ts`.
+5. **Tests** — assert body serialization and tracking attributes with `aws-sdk-client-mock`.
+
+### 9.3 Ops
+
+Operational actions follow the same architecture: domain ports (`IDlqRedriver`) + `OpsService` in `src/domain/ops/`, SQS implementation (`SqsDlqRedriver`, native `StartMessageMoveTask`) in `src/infrastructure/messaging/sqs/`, thin `OpsController` (`POST /ops/<event>/redrive`, `GET /ops/users?cid=`) registered like any controller.
 
 ---
 
