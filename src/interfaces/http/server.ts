@@ -7,7 +7,7 @@ import express, {
 } from 'express';
 import { ContextAsyncHooks, Logger } from 'traceability';
 import { Server as httpServer } from 'http';
-import { IController } from './controllers/IController';
+import { IController } from './controllers/controller.interface';
 import mongoose from 'mongoose';
 import * as OpenApiValidator from 'express-openapi-validator';
 import helmet from 'helmet';

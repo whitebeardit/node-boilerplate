@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { IController } from './IController';
+import { IController } from './controller.interface';
 import { IUserService } from '../../../domain/user/interfaces/user.service.interface';
 
 export class UserController implements IController {
