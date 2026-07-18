@@ -24,7 +24,7 @@ yarn lint:fix       # eslint --fix
 yarn prettier       # prettier --write on src/
 ```
 
-**Mandatory checklist before delivering any change** (Agents.md §6.5):
+**Mandatory checklist before delivering any change** (Agents.md §7):
 
 ```bash
 yarn prettier && yarn lint && yarn build && yarn test
@@ -98,26 +98,30 @@ Details in [docs/architecture.md](docs/architecture.md).
 - `release.config.js` calls `./setup/set-version.sh`, which does not exist in the repo (only runs in CI with `GITHUB_REF_NAME`).
 - Required environment variables are validated in `src/infrastructure/config/env.ts` (fail-fast at boot) — read env through it, not via scattered `process.env`.
 
-## Known divergences: organization standards × real code
+## Organization standards
 
-`Agents.md` (root) and the knowledge base at `.cursor/rules/ai_knowledge_base/`
-(submodule — initialize with `git submodule update --init`) describe the
-organization's **generic** whitebeardit standard. All GitHub access is via
-**SSH**: `.gitmodules` uses an HTTPS URL, but the local git has the global
-rewrite `url."git@github.com:".insteadOf "https://github.com/"` — never use
-HTTPS with credentials for git operations. Where they diverge from this
-repository, **follow the real code**:
+**`Agents.md` (root) is aligned with this repository** — it was rewritten to
+mirror the real code, and this boilerplate is the reference implementation of
+the standard. Follow it together with the docs below.
 
-| Organization standard says | Real code in this repo |
+The knowledge base at `.cursor/rules/ai_knowledge_base/` (submodule —
+initialize with `git submodule update --init`) is a **separate, org-wide
+repository** and still describes a generic layout that diverges from this repo.
+All GitHub access is via **SSH**: `.gitmodules` uses an HTTPS URL, but the
+local git has the global rewrite
+`url."git@github.com:".insteadOf "https://github.com/"` — never use HTTPS with
+credentials for git operations. Where the knowledge base diverges, **follow the
+real code and `Agents.md`**:
+
+| Knowledge base says | Real code in this repo |
 | --- | --- |
 | Factories in `src/configurations/factory/` | `src/infrastructure/config/factories/` |
 | Controllers in `src/application/` (with DTOs, middlewares, validators) | `src/interfaces/http/controllers/` — no DTOs (contract-first validation via OpenAPI) |
 | Domain grouped by type: `src/domain/{entity,repository,services}/interfaces/` | Domain by feature: `src/domain/<feature>/{interfaces,repository,service}/` |
 | Infra: `src/infrastructure/database/mongo/{models,schemas,repositories}/` | `src/infrastructure/db/mongo/{models,schema}/` + `src/infrastructure/repository/<feature>/` |
 | Single repository `IUserRepository` | Read/write split: `IUserRepositoryRead` + `IUserRepositoryWrite` |
-| Contract `openapi.yaml` / `api-doc.yaml` | `src/contracts/service.yaml` |
+| Contract `api-doc.yaml` | `src/contracts/service.yaml` |
 | `IM*` interface declared in the model file | Declared in the schema file (`user.schema.ts`) to keep the schema → model import direction cycle-free |
-| Entry point `src/app.ts` | `src/main.ts` |
 | Logs with a `data` envelope: `Logger.info('MSG', { data: {...} })` | Root-level metadata: `Logger.info('MSG', { eventName, ... })` — what the trace/cid format expects |
 | Routes with an `/api` prefix (`/api/users`) | No prefix: `/users` |
 | Rules in `.cursor/rules/REPO_RULES.md` | File does not exist in this repo |
