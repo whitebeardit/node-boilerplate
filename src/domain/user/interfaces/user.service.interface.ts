@@ -1,3 +1,4 @@
+import { IPagination } from '../../common/pagination.interface';
 import { IUserRepositoryRead } from '../repository/user.repository.read';
 import { IUserRepositoryWrite } from '../repository/user.repository.write';
 import { IUser } from './user.interface';
@@ -25,5 +26,8 @@ export interface IUserService {
   getUserByEmail(email: string): Promise<IUser>;
   updateUserById(params: IParamsUpdateUser): Promise<IUser>;
   deleteUserById(id: string): Promise<IUser>;
-  listUsers(filter: Partial<IUser>): Promise<IUser[]>;
+  listUsers(
+    filter: Partial<IUser>,
+    pagination?: Partial<IPagination>,
+  ): Promise<IUser[]>;
 }

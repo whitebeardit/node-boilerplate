@@ -56,4 +56,17 @@ describe('When we list users', () => {
       ]),
     );
   });
+
+  it('should respect the limit query parameter', async () => {
+    const { body, statusCode } = await supertest(app.app).get('/users?limit=1');
+
+    expect(statusCode).toBe(200);
+    expect(body).toHaveLength(1);
+  });
+
+  it('should return 400 when the limit is above the contract maximum', async () => {
+    const { statusCode } = await supertest(app.app).get('/users?limit=101');
+
+    expect(statusCode).toBe(400);
+  });
 });

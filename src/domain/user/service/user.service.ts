@@ -9,6 +9,11 @@ import {
 } from '../interfaces/user.service.interface';
 import { ConflictError } from '../../errors/conflict.error';
 import { NotFoundError } from '../../errors/not-found.error';
+import { IPagination } from '../../common/pagination.interface';
+import { User } from '../user.entity';
+
+const DEFAULT_LIST_LIMIT = 20;
+const DEFAULT_LIST_OFFSET = 0;
 
 export class UserService implements IUserService {
   private userRepositoryRead: IUserRepositoryRead;
@@ -33,7 +38,13 @@ export class UserService implements IUserService {
       throw new ConflictError('A user with this email already exists');
     }
 
-    return this.userRepositoryWrite.createUser(params);
+    const user = new User(
+      params.id,
+      params.name,
+      params.email,
+      params.createdAt,
+    );
+    return this.userRepositoryWrite.createUser(user);
   }
 
   /**
@@ -96,11 +107,17 @@ export class UserService implements IUserService {
   }
 
   /**
-   * List all users with optional filters
+   * List users with optional filters and pagination
    * @param filter - Filters for the query
+   * @param pagination - Optional limit/offset (defaults: 20/0)
    * @returns An array of users
    */
-  async listUsers(filter: Partial<IUser> = {}): Promise<IUser[]> {
-    return this.userRepositoryRead.listUsers(filter);
+  async listUsers(
+    filter: Partial<IUser> = {},
+    pagination: Partial<IPagination> = {},
+  ): Promise<IUser[]> {
+    const { limit = DEFAULT_LIST_LIMIT, offset = DEFAULT_LIST_OFFSET } =
+      pagination;
+    return this.userRepositoryRead.listUsers(filter, { limit, offset });
   }
 }

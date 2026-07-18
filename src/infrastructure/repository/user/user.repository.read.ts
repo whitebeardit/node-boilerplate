@@ -1,3 +1,4 @@
+import { IPagination } from '../../../domain/common/pagination.interface';
 import { IUser } from '../../../domain/user/interfaces/user.interface';
 import { IUserRepositoryRead } from '../../../domain/user/repository/user.repository.read';
 import { Muser } from '../../db/mongo/models/user.model';
@@ -23,11 +24,18 @@ export class UserRepositoryRead implements IUserRepositoryRead {
   }
 
   /**
-   * List all users
+   * List users with pagination
    * @param filter - Optional filters for the query
+   * @param pagination - Limit/offset applied to the query
    * @returns An array of users
    */
-  async listUsers(filter: Partial<IUser>): Promise<IUser[]> {
-    return Muser.find(filter, HIDE_MONGO_INTERNAL_FIELDS).lean<IUser[]>();
+  async listUsers(
+    filter: Partial<IUser>,
+    pagination: IPagination,
+  ): Promise<IUser[]> {
+    return Muser.find(filter, HIDE_MONGO_INTERNAL_FIELDS)
+      .skip(pagination.offset)
+      .limit(pagination.limit)
+      .lean<IUser[]>();
   }
 }
