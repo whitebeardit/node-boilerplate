@@ -1,6 +1,16 @@
-import mongoose from 'mongoose';
+import mongoose, { Types } from 'mongoose';
+import { IUser } from '../../../../domain/user/interfaces/user.interface';
 
-export const userSchema = new mongoose.Schema({
+/**
+ * Persistence shape of the user document: the domain interface plus the
+ * Mongo-specific fields. Lives next to the schema (not in the model file)
+ * to keep the schema -> model import direction free of cycles.
+ */
+export interface IMUser extends IUser {
+  _id: Types.ObjectId;
+}
+
+export const userSchema = new mongoose.Schema<IMUser>({
   id: {
     type: String,
     required: true,
