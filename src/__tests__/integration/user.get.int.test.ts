@@ -45,23 +45,47 @@ describe('When we get a user that does not exist', () => {
 });
 
 describe('When we list users', () => {
-  it('should return 200 with an array containing the existing user', async () => {
+  it('should return 200 with a page containing the existing user', async () => {
     const { body, statusCode } = await supertest(app.app).get('/users');
 
     expect(statusCode).toBe(200);
-    expect(Array.isArray(body)).toBe(true);
-    expect(body).toEqual(
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(body.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: existingUser.id }),
       ]),
     );
   });
 
-  it('should respect the limit query parameter', async () => {
+  it('should respect the limit and expose a cursor for the next page', async () => {
     const { body, statusCode } = await supertest(app.app).get('/users?limit=1');
 
     expect(statusCode).toBe(200);
-    expect(body).toHaveLength(1);
+    expect(body.items).toHaveLength(1);
+    expect(typeof body.nextCursor).toBe('string');
+  });
+
+  it('should resume from the cursor without repeating items', async () => {
+    const firstPage = await supertest(app.app).get('/users?limit=1');
+    const { body, statusCode } = await supertest(app.app).get(
+      `/users?limit=1&cursor=${encodeURIComponent(firstPage.body.nextCursor)}`,
+    );
+
+    expect(statusCode).toBe(200);
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].id).not.toBe(firstPage.body.items[0].id);
+  });
+
+  it('should return 400 when the cursor is malformed', async () => {
+    const { body, statusCode } = await supertest(app.app).get(
+      '/users?cursor=not-a-valid-cursor',
+    );
+
+    expect(statusCode).toBe(400);
+    expect(body).toMatchObject({
+      message: 'Invalid pagination cursor',
+      status: 400,
+    });
   });
 
   it('should return 400 when the limit is above the contract maximum', async () => {

@@ -1,8 +1,12 @@
 import { GetCommand, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
-import { IPagination } from '../../../domain/common/pagination.interface';
+import {
+  IPaginatedResult,
+  IPagination,
+} from '../../../domain/common/pagination.interface';
 import { IUser } from '../../../domain/user/interfaces/user.interface';
 import { IUserRepositoryRead } from '../../../domain/user/repository/user.repository.read';
 import { dynamoDocumentClient } from '../../db/dynamo/dynamo.client';
+import { decodeCursor, encodeCursor } from '../../db/dynamo/dynamo.cursor';
 import {
   IMUser,
   toUser,
@@ -74,27 +78,36 @@ export class UserRepositoryRead implements IUserRepositoryRead {
   }
 
   /**
-   * List users with pagination. DynamoDB has no native offset, so the scan
-   * pages through results and the offset/limit window is applied client-side.
+   * List users with cursor pagination: the scan resumes from the decoded
+   * cursor (ExclusiveStartKey) and pages until the limit is filled or the
+   * table is exhausted. The next cursor points at the last returned item's
+   * key, so the following page resumes exactly after it even when a filter
+   * discards part of a scanned page.
    * @param filter - Optional equality filters for the scan
-   * @param pagination - Limit/offset applied to the result set
-   * @returns An array of users
+   * @param pagination - Limit and optional cursor from the previous page
+   * @returns The page of users plus the cursor for the next page, if any
+   * @throws BadRequestError when the cursor is malformed
    */
   async listUsers(
     filter: Partial<IUser>,
     pagination: IPagination,
-  ): Promise<IUser[]> {
+  ): Promise<IPaginatedResult<IUser>> {
     const {
       filterExpression,
       expressionAttributeNames,
       expressionAttributeValues,
     } = buildFilterExpression(filter);
 
-    const wanted = pagination.offset + pagination.limit;
     const matches: IMUser[] = [];
-    let exclusiveStartKey: Record<string, unknown> | undefined;
+    let exclusiveStartKey = pagination.cursor
+      ? decodeCursor(pagination.cursor)
+      : undefined;
+    let scanExhausted = false;
 
-    do {
+    // May report hasMore when the remaining pages hold no matches — the next
+    // request then returns an empty page without a cursor, mirroring how
+    // native DynamoDB pagination behaves. Cheaper than scanning ahead.
+    while (matches.length < pagination.limit && !scanExhausted) {
       const { Items, LastEvaluatedKey } = await dynamoDocumentClient.send(
         new ScanCommand({
           TableName: USER_TABLE_NAME,
@@ -106,8 +119,15 @@ export class UserRepositoryRead implements IUserRepositoryRead {
       );
       matches.push(...((Items as IMUser[]) ?? []));
       exclusiveStartKey = LastEvaluatedKey;
-    } while (exclusiveStartKey && matches.length < wanted);
+      scanExhausted = !LastEvaluatedKey;
+    }
 
-    return matches.slice(pagination.offset, wanted).map(toUser);
+    const pageItems = matches.slice(0, pagination.limit);
+    const hasMore = !scanExhausted || matches.length > pagination.limit;
+    const lastItem = pageItems[pageItems.length - 1];
+    const nextCursor =
+      hasMore && lastItem ? encodeCursor({ id: lastItem.id }) : undefined;
+
+    return { items: pageItems.map(toUser), nextCursor };
   }
 }

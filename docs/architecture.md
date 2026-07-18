@@ -104,7 +104,8 @@ provisioned by IaC) and destroys the client on `close()`.
 ## Domain errors (`src/domain/errors/`)
 
 `DomainError` (base, carries the HTTP `status`) and the specializations
-`NotFoundError` (404) and `ConflictError` (409). The error flow is always:
+`BadRequestError` (400), `NotFoundError` (404) and `ConflictError` (409).
+The error flow is always:
 service throws a typed error → controller passes it on with `next(error)` →
 central error handler responds in the contract shape. No other layer builds
 error responses.
@@ -119,11 +120,14 @@ error responses.
 6. The controller responds `201` with the user; any error goes to `next(error)`.
 7. `OpenApiValidator` validates the **response** against the contract before sending it.
 
-`GET /users` is paginated: `limit`/`offset` query params (validated and coerced
-by the contract), forwarded by the controller to the service, which applies
-defaults (20/0) and passes an `IPagination` to the repository. DynamoDB has no
-native offset, so the repository scans pages and applies the offset/limit
-window client-side.
+`GET /users` uses cursor pagination: `limit`/`cursor` query params (validated
+and coerced by the contract), forwarded by the controller to the service, which
+applies the default limit (20) and passes an `IPagination` to the repository.
+The repository resumes the scan from the decoded cursor (`ExclusiveStartKey`),
+fills the page (paging past filtered-out items) and returns
+`IPaginatedResult<IUser>` — `{ items, nextCursor }`, where `nextCursor` is the
+last returned item's key encoded as an opaque base64url token
+(`dynamo.cursor.ts`). A malformed cursor throws `BadRequestError` (400).
 
 ## OpenAPI contract (`src/contracts/service.yaml`)
 

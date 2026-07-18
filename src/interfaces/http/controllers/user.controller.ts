@@ -21,20 +21,20 @@ export class UserController implements IController {
   }
 
   /**
-   * Fetch users with pagination (limit/offset coerced by the OpenAPI validator)
+   * Fetch users with cursor pagination (limit coerced by the OpenAPI validator)
    */
   getUsers = async (
     req: Request,
     res: Response,
     next: NextFunction,
   ): Promise<void> => {
-    const { limit, offset } = req.query as {
+    const { limit, cursor } = req.query as {
       limit?: number;
-      offset?: number;
+      cursor?: string;
     };
     try {
-      const users = await this.userService.listUsers({}, { limit, offset });
-      res.status(200).json(users);
+      const page = await this.userService.listUsers({}, { limit, cursor });
+      res.status(200).json(page);
     } catch (error) {
       next(error);
     }

@@ -54,7 +54,7 @@ Methods have intent-revealing names: `findUserByEmail`, `updateUserById`,
 - **Controllers are thin**: extract data from `req`, call the service and map the
   success response. No business rules and no error mapping — errors go to `next(error)`.
 - **Domain errors** in `src/domain/errors/`: `DomainError` (base, carries `status`),
-  `NotFoundError` (404), `ConflictError` (409). Services throw these
+  `BadRequestError` (400), `NotFoundError` (404), `ConflictError` (409). Services throw these
   (`throw new NotFoundError('User not found')`) and **never** decide HTTP status;
   the central error handler in `server.ts` does the mapping. Do not re-wrap
   errors in `new Error(string)` — that loses the type and the stack.
@@ -77,6 +77,7 @@ All error responses follow the contract's `Error`/`ValidationError` schemas
 | Invalid payload (contract) | 400 | `{ message, status, errors[] }` | OpenApiValidator → handler |
 | Not found | 404 | `{ message: 'User not found', status: 404 }` | `NotFoundError` → handler |
 | Conflict (e.g. duplicated email) | 409 | `{ message, status: 409 }` | `ConflictError` → handler |
+| Malformed pagination cursor | 400 | `{ message, status: 400 }` | `BadRequestError` → handler |
 | Unexpected error | 500 | `{ message: 'Internal Server Error', status: 500 }` | handler (with structured log) |
 
 ## OpenAPI contract (`src/contracts/service.yaml`)
@@ -89,7 +90,7 @@ compatible with the current contract:
 - Route resources: kebab-case, plural (`/users`, `/user-profiles`) — this repo does not use an `/api` prefix
 - Every endpoint documented with success **and** error examples; types with
   specific formats (`format: email`, `date-time`) and limits where applicable
-- List endpoints take `limit`/`offset` query params with sensible bounds
+- List endpoints take `limit`/`cursor` query params with sensible bounds and respond `{ items, nextCursor }`
 
 ## Style and tooling
 

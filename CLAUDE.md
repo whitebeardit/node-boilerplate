@@ -35,7 +35,7 @@ yarn prettier && yarn lint && yarn build && yarn test
 | Path | Responsibility |
 | --- | --- |
 | `src/domain/<feature>/` | Pure business logic (no I/O): entity, interfaces, repository contracts, service |
-| `src/domain/errors/` | Domain errors (`DomainError`, `NotFoundError` 404, `ConflictError` 409) — mapped to HTTP by the central error handler in `server.ts` |
+| `src/domain/errors/` | Domain errors (`DomainError`, `BadRequestError` 400, `NotFoundError` 404, `ConflictError` 409) — mapped to HTTP by the central error handler in `server.ts` |
 | `src/domain/common/` | Cross-feature domain types (e.g. `IPagination`) |
 | `src/interfaces/http/` | `server.ts` (Express + middlewares) and `controllers/` (thin HTTP adapters) |
 | `src/infrastructure/repository/<feature>/` | Repository contract implementations (DynamoDB) |
@@ -56,7 +56,7 @@ constructor (an `IParams*` object); composition happens **only** in factories.
 2. `src/domain/<feature>/interfaces/<feature>.service.interface.ts` — `I<Feature>Service`, `IParamsCreate<Feature>`, `IParams<Feature>Service`…
 3. `src/domain/<feature>/repository/<feature>.repository.read.ts` and `.write.ts` — contracts `I<Feature>RepositoryRead/Write`
 4. `src/domain/<feature>/<feature>.entity.ts` — class `<Feature> implements I<Feature>` with `readonly` properties
-5. `src/domain/<feature>/service/<feature>.service.ts` — `<Feature>Service implements I<Feature>Service`; business rules throw errors from `src/domain/errors/` (`NotFoundError`, `ConflictError`) — never decide HTTP status in the service
+5. `src/domain/<feature>/service/<feature>.service.ts` — `<Feature>Service implements I<Feature>Service`; business rules throw errors from `src/domain/errors/` (`BadRequestError`, `NotFoundError`, `ConflictError`) — never decide HTTP status in the service
 6. `src/infrastructure/db/dynamo/tables/<feature>.table.ts` — `IM<Feature>` (domain interface with storage types: dates as ISO strings), `<FEATURE>_TABLE_NAME`, `<feature>TableDefinition` (register it in `DynamoDatabase` so the table is created on boot) and the `to<Feature>`/`to<Feature>Item` mappers
 7. `src/infrastructure/repository/<feature>/<feature>.repository.read.ts` and `.write.ts` — implementations (same file names as the contracts, different directories); always map items through `to<Feature>` so storage internals never leak
 8. `src/interfaces/http/controllers/<feature>.controller.ts` — `<Feature>Controller implements IController`, receives `I<Feature>Service` (the interface, not the class); errors go to `next(error)` — the central error handler answers in the contract shape
@@ -96,7 +96,7 @@ Details in [docs/architecture.md](docs/architecture.md).
 - Commits go through commitlint (husky `commit-msg` hook): type required, lowercase subject, header ≤ 72 chars.
 - `release.config.js` calls `./setup/set-version.sh`, which does not exist in the repo (only runs in CI with `GITHUB_REF_NAME`).
 - Required environment variables are validated in `src/infrastructure/config/env.ts` (fail-fast at boot) — read env through it, not via scattered `process.env`.
-- DynamoDB has no native offset: `listUsers` scans pages and applies offset/limit client-side; heavy list endpoints should move to cursor (`ExclusiveStartKey`) pagination.
+- List endpoints use cursor pagination (`limit` + opaque `cursor`, response `{ items, nextCursor }`): the cursor is the DynamoDB `ExclusiveStartKey` base64url-encoded in `dynamo.cursor.ts`; a malformed cursor throws `BadRequestError` (400).
 - Lookups by non-key attributes need a GSI (e.g. `email-index` for `findUserByEmail`) — add the index to the table definition in the same change.
 
 ## Organization standards

@@ -20,21 +20,51 @@ beforeEach(async () => {
 
 describe('When we list users filtering by attributes', () => {
   it('should return only the users matching every filter', async () => {
-    const users = await userRepositoryRead.listUsers(
+    const page = await userRepositoryRead.listUsers(
       { name: existingUser.name, createdAt: existingUser.createdAt },
-      { limit: 10, offset: 0 },
+      { limit: 10 },
     );
 
-    expect(users).toEqual([existingUser]);
+    expect(page.items).toEqual([existingUser]);
+    expect(page.nextCursor).toBeUndefined();
   });
 
-  it('should return an empty array when no user matches', async () => {
-    const users = await userRepositoryRead.listUsers(
+  it('should return an empty page when no user matches', async () => {
+    const page = await userRepositoryRead.listUsers(
       { name: `absent-${randomUUID()}` },
-      { limit: 10, offset: 0 },
+      { limit: 10 },
     );
 
-    expect(users).toEqual([]);
+    expect(page).toEqual({ items: [], nextCursor: undefined });
+  });
+});
+
+describe('When we paginate a filtered list with a cursor', () => {
+  it('should walk every match exactly once across pages', async () => {
+    const sharedName = `shared-${randomUUID()}`;
+    const users = await Promise.all(
+      [1, 2, 3].map((index) =>
+        userRepositoryWrite.createUser({
+          id: randomUUID(),
+          email: `cursor-${index}-${randomUUID()}@email.com`,
+          name: sharedName,
+          createdAt: new Date(),
+        }),
+      ),
+    );
+
+    const seenIds: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await userRepositoryRead.listUsers(
+        { name: sharedName },
+        { limit: 2, cursor },
+      );
+      seenIds.push(...page.items.map((user) => user.id));
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    expect([...seenIds].sort()).toEqual(users.map((user) => user.id).sort());
   });
 });
 

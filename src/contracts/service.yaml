@@ -29,7 +29,7 @@ paths:
         - Users
       summary: Get all users
       operationId: getUsers
-      description: Retrieve a paginated list of users.
+      description: Retrieve a cursor-paginated list of users.
       parameters:
         - name: limit
           in: query
@@ -40,23 +40,27 @@ paths:
             maximum: 100
             default: 20
           description: Maximum number of users to return
-        - name: offset
+        - name: cursor
           in: query
           required: false
           schema:
-            type: integer
-            minimum: 0
-            default: 0
-          description: Number of users to skip
+            type: string
+          description: >-
+            Opaque cursor returned as nextCursor by the previous page; omit to
+            start from the first page
       responses:
         '200':
-          description: A list of users
+          description: A page of users
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/UserPage'
+        '400':
+          description: Invalid pagination parameters or malformed cursor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: Server error
           content:
@@ -230,6 +234,21 @@ components:
           type: string
           format: date-time
           description: The date and time the user was created
+    UserPage:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+          description: The users in this page
+        nextCursor:
+          type: string
+          description: >-
+            Opaque cursor to fetch the next page; absent when this is the last
+            page
     NewUser:
       type: object
       required:

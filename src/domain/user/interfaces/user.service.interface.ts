@@ -1,4 +1,7 @@
-import { IPagination } from '../../common/pagination.interface';
+import {
+  IPaginatedResult,
+  IPagination,
+} from '../../common/pagination.interface';
 import { IUserRepositoryRead } from '../repository/user.repository.read';
 import { IUserRepositoryWrite } from '../repository/user.repository.write';
 import { IUser } from './user.interface';
@@ -29,5 +32,5 @@ export interface IUserService {
   listUsers(
     filter: Partial<IUser>,
     pagination?: Partial<IPagination>,
-  ): Promise<IUser[]>;
+  ): Promise<IPaginatedResult<IUser>>;
 }
