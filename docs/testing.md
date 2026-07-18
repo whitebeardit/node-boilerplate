@@ -1,55 +1,55 @@
-# Testes
+# Testing
 
-## Comandos
+## Commands
 
 ```bash
-yarn test           # unit + integração
+yarn test           # unit + integration
 yarn test:unit      # jest --config ./jest/jest.config.ts
 yarn test:int       # jest --runInBand --forceExit --config ./jest/jest.int-config.ts
-yarn test:coverage  # cobertura de ambos (meta: ≥ 80% linhas/branches)
+yarn test:coverage  # coverage for both (target: ≥ 80% lines/branches)
 ```
 
-O CI (`.github/workflows/ci.yml`) roda lint → build → test:unit → test:int em
-pushes para `main`/`stage` e em pull requests.
+CI (`.github/workflows/ci.yml`) runs lint → build → test:unit → test:int on
+pushes to `main`/`stage` and on pull requests.
 
-## Configuração (diretório `jest/`, fora de `src/`)
+## Configuration (`jest/` directory, outside `src/`)
 
-| Arquivo | Papel |
+| File | Role |
 | --- | --- |
-| `jest/jest.config.ts` | Base (unit): `rootDir: '../src'`, `testRegex: '.*\.unit.test\.ts$'`, `setupFiles: ['../jest/setup-tests.ts']`, timeout 20s, `bail: 1` |
-| `jest/jest.int-config.ts` | Estende a base: `testRegex: '.*\.int.test\.ts$'`, `globalSetup`/`globalTeardown`, `setupFilesAfterEnv: setup-integration-tests.ts` |
-| `jest/setup-tests.ts` | Carrega `.env.test` via dotenv (inclui `OTEL_SDK_DISABLED=true`) |
-| `jest/start-integration.ts` / `stop-integration.ts` | Sobe/derruba `mongodb-memory-server` (ReplSet) — não precisa de Mongo local |
-| `jest/setup-db.ts` | Classe `MongooseDatabase` (conexão/limpeza) |
-| `jest/setup-integration-tests.ts` | `beforeAll` chama `bootstrapTest()` e exporta `app` (instância de `Server`) |
+| `jest/jest.config.ts` | Base (unit): `rootDir: '../src'`, `testRegex: '.*\.unit.test\.ts$'`, `setupFiles: ['../jest/setup-tests.ts']`, 20s timeout, `bail: 1` |
+| `jest/jest.int-config.ts` | Extends the base: `testRegex: '.*\.int.test\.ts$'`, `globalSetup`/`globalTeardown`, `setupFilesAfterEnv: setup-integration-tests.ts` |
+| `jest/setup-tests.ts` | Loads `.env.test` via dotenv (includes `OTEL_SDK_DISABLED=true`) |
+| `jest/start-integration.ts` / `stop-integration.ts` | Starts/stops `mongodb-memory-server` (ReplSet) — no local Mongo needed |
+| `jest/setup-db.ts` | `MongooseDatabase` class (connection/teardown) |
+| `jest/setup-integration-tests.ts` | `beforeAll` calls `bootstrapTest()` and exports `app` (a `Server` instance) |
 
-Suporte dentro de `src/`:
+Support inside `src/`:
 
-- `src/__tests__/configApp.ts` — instância de `Server` para testes. **Todo controller
-  novo precisa ser registrado aqui**, além de `src/main.ts`, senão o teste de
-  integração devolve 404/erro de contrato.
-- `src/__tests__/testUtils.ts` — `bootstrapTest()` conecta o `MongooseDatabase` e devolve `{ dbInstance, app }`.
+- `src/__tests__/configApp.ts` — the `Server` instance for tests. **Every new
+  controller must be registered here**, in addition to `src/main.ts`, otherwise
+  integration tests get 404/contract errors.
+- `src/__tests__/testUtils.ts` — `bootstrapTest()` connects the `MongooseDatabase` and returns `{ dbInstance, app }`.
 
-## Nomenclatura (obrigatória — enforced pelo `testRegex`)
+## Naming (mandatory — enforced by `testRegex`)
 
-| Tipo | Sufixo | Local | Exemplo real |
+| Type | Suffix | Location | Real example |
 | --- | --- | --- | --- |
-| Unitário | `.unit.test.ts` | `src/__tests__/unit/` | `telemetry.unit.test.ts` |
-| Integração | `.int.test.ts` | `src/__tests__/integration/` | `user.create.int.test.ts` |
+| Unit | `.unit.test.ts` | `src/__tests__/unit/` | `user.service.unit.test.ts` |
+| Integration | `.int.test.ts` | `src/__tests__/integration/` | `user.create.int.test.ts` |
 
-- Nome começa pelo assunto testado (`user.create.int.test.ts`), nunca genérico.
-- Não misturar unit e integração no mesmo arquivo.
-- Blocos: `describe('When we ...')` / `it('should ...')`.
+- Name starts with the subject under test (`user.create.int.test.ts`), never generic.
+- Do not mix unit and integration specs in the same file.
+- Blocks: `describe('When we ...')` / `it('should ...')`.
 
-## Teste de integração — anatomia (padrão real de `user.create.int.test.ts`)
+## Integration test — anatomy (real pattern from `user.create.int.test.ts`)
 
 ```ts
-import request from 'supertest';
-import { app } from '../configApp';
+import supertest from 'supertest';
+import { app } from '../../../jest/setup-integration-tests';
 
 describe('When we create a user', () => {
   it('should return 201 and persist the user', async () => {
-    const response = await request(app.app).post('/users').send({
+    const response = await supertest(app.app).post('/users').send({
       id: '123',
       name: 'John Doe',
       email: 'john@example.com',
@@ -59,23 +59,27 @@ describe('When we create a user', () => {
 });
 ```
 
-Pontos de atenção:
+Watch out for:
 
-- `app.app` é o `express.Application` dentro da classe `Server`.
-- O `mongodb-memory-server` é global (via `globalSetup`); testes rodam com `--runInBand`.
-- O OpenApiValidator está ativo nos testes: payloads fora do contrato retornam 400,
-  responses fora do contrato retornam 500 — atualize `src/contracts/service.yaml` junto.
+- `app.app` is the `express.Application` inside the `Server` class.
+- The `mongodb-memory-server` is global (via `globalSetup`); tests run with `--runInBand`
+  and data **persists across suites** — use unique ids/emails per test.
+- The OpenApiValidator is active in tests: payloads outside the contract return 400,
+  responses outside the contract return 500 — update `src/contracts/service.yaml` together.
+- Assert that Mongo internals do not leak: `expect(body._id).toBeUndefined()`.
 
-## Teste unitário
+## Unit tests
 
-- Mockar todas as dependências externas (repositórios, producers) — services recebem
-  tudo via construtor, então basta passar objetos falsos tipados pelos contratos `I*`.
-- Determinístico e rápido (<100ms por teste).
-- OTel fica desabilitado (`OTEL_SDK_DISABLED=true` em `.env.test`); para testar código
-  sensível a contexto de trace, registre um `AsyncLocalStorageContextManager`
-  manualmente como em `src/__tests__/unit/telemetry.unit.test.ts`.
+- Mock every external dependency (repositories, producers) — services receive
+  everything via constructor, so pass typed mocks: `jest.Mocked<IUserRepositoryRead>`.
+  See `user.service.unit.test.ts` for the canonical pattern (success, conflict
+  and not-found scenarios per method).
+- Deterministic and fast (<100ms per test).
+- OTel stays disabled (`OTEL_SDK_DISABLED=true` in `.env.test`); to test
+  trace-context-sensitive code, register an `AsyncLocalStorageContextManager`
+  manually as in `src/__tests__/unit/telemetry.unit.test.ts`.
 
-## Cobertura
+## Coverage
 
-- Mínimo 80% global (linhas e branches); services de domínio críticos ≥ 90%.
-- Exclusões já configuradas: `src/contracts/`, `src/__tests__/` (ver `coveragePathIgnorePatterns`).
+- Minimum 80% globally (lines and branches); critical domain services ≥ 90%.
+- Exclusions already configured: `src/contracts/`, `src/__tests__/` (see `coveragePathIgnorePatterns`).

@@ -1,78 +1,78 @@
 # Node Boilerplate
 
-Este repositório demonstra uma aplicação Node.js + TypeScript estruturada segundo
-a Clean Architecture. A separação em camadas facilita testes e manutenção.
+This repository demonstrates a Node.js + TypeScript application structured
+following Clean Architecture. The layered separation makes testing and
+maintenance easier.
 
-## Arquitetura de Pastas
+## Folder Architecture
 
-- **src/domain** – Entidades e contratos de repositório/serviço.
-- **src/application** – Opcional para casos de uso ou serviços de aplicação.
-- **src/interfaces** – Adaptadores de entrada/saída (ex.: HTTP).
-- **src/infrastructure** – Implementações concretas (Mongo, factories etc.).
-- **src/contracts** – OpenAPI que documenta e valida a API.
-- **src/__tests__** – Testes unitários e de integração.
-- **main.ts** – Ponto de entrada que instancia o servidor.
+- **src/domain** – Entities, domain errors and repository/service contracts.
+- **src/interfaces** – Input/output adapters (e.g. HTTP).
+- **src/infrastructure** – Concrete implementations (Mongo, factories, telemetry, env).
+- **src/contracts** – OpenAPI spec that documents and validates the API.
+- **src/\_\_tests\_\_** – Unit and integration tests.
+- **main.ts** – Entry point that wires telemetry and instantiates the server.
 
-## Executando Localmente
+## Running Locally
 
-1. Instale as dependências:
+1. Install the dependencies:
 
 ```bash
 yarn install
 ```
 
-2. Crie um arquivo `.env` a partir do exemplo (`cp .env.example .env`) e ajuste
-   `DATABASE_URI`, `PORT` e as variáveis `OTEL_*`.
-3. Inicie em modo desenvolvimento:
+2. Create a `.env` file from the example (`cp .env.example .env`) and adjust
+   `DATABASE_URI`, `PORT` and the `OTEL_*` variables.
+3. Start in development mode:
 
 ```bash
 yarn dev
 ```
 
-4. Para compilar e rodar a versão buildada:
+4. To compile and run the built version:
 
 ```bash
 yarn build
 yarn start
 ```
 
-5. Testes e linter:
+5. Tests and linter:
 
 ```bash
 yarn test
 yarn lint
 ```
 
-## Adicionando Novos Recursos
+## Adding New Features
 
-1. Defina entidades e interfaces em `src/domain`.
-2. Crie as implementações em `src/infrastructure`.
-3. Exponha rotas ou adaptadores em `src/interfaces`.
-4. Registre as dependências em `src/infrastructure/config/factories` e ajuste
-   `main.ts`.
-5. Documente as rotas em `src/contracts/service.yaml`.
-6. Escreva testes em `src/__tests__`.
+1. Define entities and interfaces in `src/domain`.
+2. Create the implementations in `src/infrastructure`.
+3. Expose routes or adapters in `src/interfaces`.
+4. Register the dependencies in `src/infrastructure/config/factories` and update
+   `main.ts` (and `src/__tests__/configApp.ts` for the integration tests).
+5. Document the routes in `src/contracts/service.yaml`.
+6. Write tests in `src/__tests__`.
 
-O arquivo `src/contracts/service.yaml` é a fonte de verdade da documentação da
-API e deve refletir quaisquer alterações de rota ou contrato.
+The `src/contracts/service.yaml` file is the source of truth for the API
+documentation and must reflect any route or contract change.
 
-## Observabilidade
+## Observability
 
-O projeto vem instrumentado com **OpenTelemetry** (tracing distribuído via
-`@opentelemetry/sdk-node` + auto-instrumentations) e **logs estruturados JSON**
-(lib `traceability`/winston). Cada linha de log emitida dentro de um request
-carrega automaticamente o `trace_id`/`span_id` do trace ativo, permitindo
-correlação direta entre logs e traces.
+The project ships instrumented with **OpenTelemetry** (distributed tracing via
+`@opentelemetry/sdk-node` + auto-instrumentations) and **structured JSON logs**
+(`traceability`/winston). Every log line emitted inside a request automatically
+carries the `trace_id`/`span_id` of the active trace, enabling direct
+correlation between logs and traces.
 
-- Inicialização em `src/infrastructure/telemetry/tracing.ts` (importado na
-  primeira linha de `src/main.ts`).
-- Configuração via variáveis `OTEL_*` (ver `.env.example`).
-- Guia completo em [docs/observability.md](docs/observability.md).
+- Initialization in `src/infrastructure/telemetry/tracing.ts` (imported on the
+  first line of `src/main.ts`).
+- Configuration via `OTEL_*` variables (see `.env.example`).
+- Full guide in [docs/observability.md](docs/observability.md).
 
-## Documentação
+## Documentation
 
-- [CLAUDE.md](CLAUDE.md) — guia de contribuição para agentes de IA (Claude Code)
-- [docs/architecture.md](docs/architecture.md) — camadas, fluxo e injeção de dependência
-- [docs/conventions.md](docs/conventions.md) — nomenclatura e padrões de código
-- [docs/testing.md](docs/testing.md) — estratégia e convenções de testes
-- [docs/observability.md](docs/observability.md) — OpenTelemetry e logging
+- [CLAUDE.md](CLAUDE.md) — contribution guide for AI agents (Claude Code)
+- [docs/architecture.md](docs/architecture.md) — layers, flow and dependency injection
+- [docs/conventions.md](docs/conventions.md) — naming and code patterns
+- [docs/testing.md](docs/testing.md) — testing strategy and conventions
+- [docs/observability.md](docs/observability.md) — OpenTelemetry and logging

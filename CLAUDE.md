@@ -1,131 +1,136 @@
 # CLAUDE.md
 
-Guia de orientação para o Claude Code evoluir este projeto. **O código real prevalece
-sobre qualquer documento** (inclusive `Agents.md` — ver "Divergências conhecidas").
+Guidance for Claude Code when evolving this project. **The real code takes
+precedence over any document** (including `Agents.md` — see "Known divergences").
 
-## O que é
+## What this is
 
-Boilerplate de REST API em Node.js 20 + TypeScript (strict, CommonJS) com Clean
-Architecture, contract-first (OpenAPI valida request **e** response em runtime),
-MongoDB via Mongoose, observabilidade com OpenTelemetry + logs estruturados
-(winston via lib `traceability`) com `trace_id` em cada linha de log.
+A REST API boilerplate in Node.js 20 + TypeScript (strict, CommonJS) with Clean
+Architecture, contract-first design (OpenAPI validates requests **and** responses
+at runtime), MongoDB via Mongoose, and observability with OpenTelemetry plus
+structured logs (winston via the `traceability` lib) carrying the `trace_id` on
+every log line.
 
-## Comandos
+## Commands
 
 ```bash
-yarn dev            # ts-node-dev com --env-file=.env
-yarn build          # tsc + copia src/contracts/*.yaml para dist (copy-essentials)
+yarn dev            # ts-node-dev with --env-file=.env
+yarn build          # tsc + copies src/contracts/*.yaml to dist (copy-essentials)
 yarn start          # node dist/src/main.js
-yarn test:unit      # jest, apenas *.unit.test.ts
-yarn test:int       # jest --runInBand, apenas *.int.test.ts (usa mongodb-memory-server; não precisa de Mongo local)
+yarn test:unit      # jest, only *.unit.test.ts
+yarn test:int       # jest --runInBand, only *.int.test.ts (mongodb-memory-server; no local Mongo needed)
 yarn lint           # eslint
-yarn prettier       # prettier --write em src/
+yarn lint:fix       # eslint --fix
+yarn prettier       # prettier --write on src/
 ```
 
-**Checklist obrigatório antes de entregar qualquer alteração** (Agents.md §6.5):
+**Mandatory checklist before delivering any change** (Agents.md §6.5):
 
 ```bash
 yarn prettier && yarn lint && yarn build && yarn test
 ```
 
-## Mapa de camadas
+## Layer map
 
-| Caminho | Responsabilidade |
+| Path | Responsibility |
 | --- | --- |
-| `src/domain/<feature>/` | Lógica de negócio pura (sem I/O): entity, interfaces, contratos de repositório, service |
-| `src/domain/errors/` | Erros de domínio (`DomainError`, `NotFoundError` 404, `ConflictError` 409) — mapeados para HTTP pelo error handler central do `server.ts` |
-| `src/interfaces/http/` | `server.ts` (Express + middlewares) e `controllers/` (adaptadores HTTP finos) |
-| `src/infrastructure/repository/<feature>/` | Implementações dos contratos de repositório (Mongoose) |
-| `src/infrastructure/db/mongo/{schema,models}/` | Schemas e models Mongoose |
-| `src/infrastructure/config/factories/` | Composition root — DI manual via factories estáticas |
-| `src/infrastructure/telemetry/` | OpenTelemetry (`tracing.ts`) e injeção de trace context no logger (`logger.ts`) |
-| `src/contracts/service.yaml` | OpenAPI 3.0.2 — fonte de verdade da API, validada em runtime |
-| `src/__tests__/{unit,integration}/` | Testes (sufixos obrigatórios `.unit.test.ts` / `.int.test.ts`) |
-| `src/main.ts` | Entry point: importa telemetria (1ª linha), instancia `Server` com factories |
+| `src/domain/<feature>/` | Pure business logic (no I/O): entity, interfaces, repository contracts, service |
+| `src/domain/errors/` | Domain errors (`DomainError`, `NotFoundError` 404, `ConflictError` 409) — mapped to HTTP by the central error handler in `server.ts` |
+| `src/domain/common/` | Cross-feature domain types (e.g. `IPagination`) |
+| `src/interfaces/http/` | `server.ts` (Express + middlewares) and `controllers/` (thin HTTP adapters) |
+| `src/infrastructure/repository/<feature>/` | Repository contract implementations (Mongoose) |
+| `src/infrastructure/db/mongo/{schema,models}/` | Mongoose schemas and models |
+| `src/infrastructure/config/` | `env.ts` (fail-fast env validation) and `factories/` (composition root — manual DI via static factories) |
+| `src/infrastructure/telemetry/` | OpenTelemetry (`tracing.ts`) and trace-context injection into the logger (`logger.ts`) |
+| `src/contracts/service.yaml` | OpenAPI 3.0.2 — source of truth for the API, validated at runtime |
+| `src/__tests__/{unit,integration}/` | Tests (mandatory suffixes `.unit.test.ts` / `.int.test.ts`) |
+| `src/main.ts` | Entry point: imports telemetry (first line), instantiates `Server` with factories, graceful shutdown |
 
-**Regra de dependência:** `domain` não importa nada de `infrastructure` nem de
-`interfaces`. Controllers delegam para services; services recebem repositórios via
-construtor (objeto `IParams*`); composição acontece **somente** nas factories.
+**Dependency rule:** `domain` imports nothing from `infrastructure` or
+`interfaces`. Controllers delegate to services; services receive repositories via
+constructor (an `IParams*` object); composition happens **only** in factories.
 
-## Adicionando uma feature (ordem exata, espelhe o slice `user`)
+## Adding a feature (exact order — mirror the `user` slice)
 
 1. `src/domain/<feature>/interfaces/<feature>.interface.ts` — `I<Feature>`
 2. `src/domain/<feature>/interfaces/<feature>.service.interface.ts` — `I<Feature>Service`, `IParamsCreate<Feature>`, `IParams<Feature>Service`…
-3. `src/domain/<feature>/repository/<feature>.repository.read.ts` e `.write.ts` — contratos `I<Feature>RepositoryRead/Write`
-4. `src/domain/<feature>/<feature>.entity.ts` — classe `<Feature>`
-5. `src/domain/<feature>/service/<feature>.service.ts` — `<Feature>Service implements I<Feature>Service`; regras de negócio lançam erros de `src/domain/errors/` (`NotFoundError`, `ConflictError`) — nunca decidir status HTTP no service
+3. `src/domain/<feature>/repository/<feature>.repository.read.ts` and `.write.ts` — contracts `I<Feature>RepositoryRead/Write`
+4. `src/domain/<feature>/<feature>.entity.ts` — class `<Feature> implements I<Feature>` with `readonly` properties
+5. `src/domain/<feature>/service/<feature>.service.ts` — `<Feature>Service implements I<Feature>Service`; business rules throw errors from `src/domain/errors/` (`NotFoundError`, `ConflictError`) — never decide HTTP status in the service
 6. `src/infrastructure/db/mongo/schema/<feature>.schema.ts` — `export const <feature>Schema`
-7. `src/infrastructure/db/mongo/models/<feature>.model.ts` — `export const M<feature>` (ex.: `Muser`)
-8. `src/infrastructure/repository/<feature>/<feature>.repository.read.ts` e `.write.ts` — implementações (mesmos nomes de arquivo dos contratos, diretórios diferentes)
-9. `src/interfaces/http/controllers/<feature>.controller.ts` — `<Feature>Controller implements IController`, recebe `I<Feature>Service` (a interface, não a classe); erros vão para `next(error)` — o error handler central responde no formato do contrato
-10. `src/infrastructure/config/factories/<feature>.service.factory.ts` e `<feature>.controller.factory.ts` — `static create()`
-11. Registrar o controller em **dois lugares**: `src/main.ts` e `src/__tests__/configApp.ts`
-12. Atualizar `src/contracts/service.yaml` com os novos endpoints (request e response)
-13. Testes: `src/__tests__/unit/<feature>.*.unit.test.ts` e `src/__tests__/integration/<feature>.*.int.test.ts`
+7. `src/infrastructure/db/mongo/models/<feature>.model.ts` — `export const M<feature>` (e.g. `Muser`)
+8. `src/infrastructure/repository/<feature>/<feature>.repository.read.ts` and `.write.ts` — implementations (same file names as the contracts, different directories); use `.lean()` with `HIDE_MONGO_INTERNAL_FIELDS` so `_id`/`__v` never leak
+9. `src/interfaces/http/controllers/<feature>.controller.ts` — `<Feature>Controller implements IController`, receives `I<Feature>Service` (the interface, not the class); errors go to `next(error)` — the central error handler answers in the contract shape
+10. `src/infrastructure/config/factories/<feature>.service.factory.ts` and `<feature>.controller.factory.ts` — `static create()`
+11. Register the controller in **two places**: `src/main.ts` and `src/__tests__/configApp.ts`
+12. Update `src/contracts/service.yaml` with the new endpoints (request and response)
+13. Tests: `src/__tests__/unit/<feature>.*.unit.test.ts` and `src/__tests__/integration/<feature>.*.int.test.ts`
 
-Detalhes em [docs/architecture.md](docs/architecture.md).
+Details in [docs/architecture.md](docs/architecture.md).
 
-## Convenções críticas (resumo)
+## Critical conventions (summary)
 
-- Arquivos: minúsculas com pontos — `user.service.ts`, `user.repository.read.ts`, `user.controller.factory.ts`. Exceção existente: `IController.ts`.
-- Interfaces com prefixo `I` (`IUser`, `IUserService`, `IController`); parâmetros de construtor/método como `IParams*` (`IParamsCreateUser`, `IParamsUserService`).
-- Models Mongoose com prefixo `M` (`Muser`); schemas em camelCase (`userSchema`).
-- Constantes em `UPPER_SNAKE_CASE` (`OPEN_API_SPEC_FILE_LOCATION`).
-- Testes: `describe('When we ...')` / `it('should ...')`.
-- Commits: Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`) — exigido pelo semantic-release.
-- Tabela completa em [docs/conventions.md](docs/conventions.md).
+- Files: lowercase with dots — `user.service.ts`, `user.repository.read.ts`, `user.controller.factory.ts`. Existing exception: `IController.ts`.
+- Interfaces prefixed with `I` (`IUser`, `IUserService`, `IController`); constructor/method parameter objects as `IParams*` (`IParamsCreateUser`, `IParamsUserService`).
+- Mongoose models prefixed with `M` (`Muser`); schemas in camelCase (`userSchema`).
+- Constants in `UPPER_SNAKE_CASE` (`OPEN_API_SPEC_FILE_LOCATION`).
+- Tests: `describe('When we ...')` / `it('should ...')`.
+- Commits: Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`) — required by semantic-release and enforced by commitlint.
+- **Everything in English**: code, variable names, comments, tests, and documentation.
+- Full table in [docs/conventions.md](docs/conventions.md).
 
-## Observabilidade (regras duras)
+## Observability (hard rules)
 
-- **Nunca** usar `console.log`. Sempre `import { Logger } from 'traceability'`.
-- Todo log com metadata estruturada: `Logger.info('mensagem', { eventName: 'user.created', ... })`. **Nunca** `JSON.stringify` dentro da message.
-- O `import './infrastructure/telemetry/tracing'` **deve ser a primeira linha** de `src/main.ts` — a auto-instrumentação precisa carregar antes de express/mongoose.
-- Cada linha de log emitida dentro de um request/span ganha `trace_id`, `span_id` e `trace_flags` automaticamente (formato winston em `src/infrastructure/telemetry/logger.ts`), além do `cid` legado do `traceability`.
-- Testes rodam com `OTEL_SDK_DISABLED=true` (definido em `.env.test`).
-- Detalhes e como criar spans manuais em [docs/observability.md](docs/observability.md).
+- **Never** use `console.log`. Always `import { Logger } from 'traceability'`.
+- Every log with structured metadata: `Logger.info('message', { eventName: 'user.created', ... })`. **Never** `JSON.stringify` inside the message.
+- The `import './infrastructure/telemetry/tracing'` **must be the first line** of `src/main.ts` — auto-instrumentation needs to load before express/mongoose.
+- Every log line emitted inside a request/span automatically gains `trace_id`, `span_id` and `trace_flags` (winston format in `src/infrastructure/telemetry/logger.ts`), in addition to the legacy `cid` from `traceability`.
+- Tests run with `OTEL_SDK_DISABLED=true` (set in `.env.test`).
+- Details and manual spans in [docs/observability.md](docs/observability.md).
 
 ## Pitfalls
 
-- `service.yaml` valida **request e response** (`validateResponses: true`): endpoint novo ou campo novo sem atualizar o contrato → erro em runtime (400/500).
-- Rotas não descritas no contrato são rejeitadas pelo validator (`/health` funciona porque é registrada antes dos middlewares).
-- O build precisa do `copy-essentials` (yaml não é compilado pelo tsc) — já embutido em `yarn build`.
-- Teste de integração só enxerga controllers registrados em `src/__tests__/configApp.ts`.
-- Commits passam pelo commitlint (hook `commit-msg` do husky): tipo obrigatório, subject em minúsculas, header ≤ 72 chars.
-- `release.config.js` chama `./setup/set-version.sh`, que não existe no repo (só roda em CI com `GITHUB_REF_NAME`).
-- Variáveis de ambiente obrigatórias são validadas em `src/infrastructure/config/env.ts` (fail-fast no boot) — ler env por lá, não via `process.env` espalhado.
+- `service.yaml` validates **request and response** (`validateResponses: true`): a new endpoint or field without a contract update fails at runtime (400/500).
+- Routes not described in the contract are rejected by the validator (`/health` works because it is registered before the middlewares).
+- The build needs `copy-essentials` (yaml is not compiled by tsc) — already part of `yarn build`.
+- Integration tests only see controllers registered in `src/__tests__/configApp.ts`.
+- Commits go through commitlint (husky `commit-msg` hook): type required, lowercase subject, header ≤ 72 chars.
+- `release.config.js` calls `./setup/set-version.sh`, which does not exist in the repo (only runs in CI with `GITHUB_REF_NAME`).
+- Required environment variables are validated in `src/infrastructure/config/env.ts` (fail-fast at boot) — read env through it, not via scattered `process.env`.
 
-## Divergências conhecidas: padrões da organização × código real
+## Known divergences: organization standards × real code
 
-`Agents.md` (raiz) e o knowledge base em `.cursor/rules/ai_knowledge_base/`
-(submodule — inicializar com `git submodule update --init`) descrevem o padrão
-**genérico** da organização whitebeardit. Todo acesso ao GitHub é via **SSH**: o
-`.gitmodules` usa URL HTTPS, mas o git local tem o rewrite global
-`url."git@github.com:".insteadOf "https://github.com/"` — nunca usar HTTPS com
-credenciais para operações git. Onde divergirem deste
-repositório, **siga o código real**:
+`Agents.md` (root) and the knowledge base at `.cursor/rules/ai_knowledge_base/`
+(submodule — initialize with `git submodule update --init`) describe the
+organization's **generic** whitebeardit standard. All GitHub access is via
+**SSH**: `.gitmodules` uses an HTTPS URL, but the local git has the global
+rewrite `url."git@github.com:".insteadOf "https://github.com/"` — never use
+HTTPS with credentials for git operations. Where they diverge from this
+repository, **follow the real code**:
 
-| Padrão da organização diz | Código real deste repo |
+| Organization standard says | Real code in this repo |
 | --- | --- |
-| Factories em `src/configurations/factory/` | `src/infrastructure/config/factories/` |
-| Controllers em `src/application/` (com DTOs, middlewares, validators) | `src/interfaces/http/controllers/` — sem DTOs (validação contract-first via OpenAPI) |
-| Domínio agrupado por tipo: `src/domain/{entity,repository,services}/interfaces/` | Domínio por feature: `src/domain/<feature>/{interfaces,repository,service}/` |
+| Factories in `src/configurations/factory/` | `src/infrastructure/config/factories/` |
+| Controllers in `src/application/` (with DTOs, middlewares, validators) | `src/interfaces/http/controllers/` — no DTOs (contract-first validation via OpenAPI) |
+| Domain grouped by type: `src/domain/{entity,repository,services}/interfaces/` | Domain by feature: `src/domain/<feature>/{interfaces,repository,service}/` |
 | Infra: `src/infrastructure/database/mongo/{models,schemas,repositories}/` | `src/infrastructure/db/mongo/{models,schema}/` + `src/infrastructure/repository/<feature>/` |
-| Repositório único `IUserRepository` | Read/write split: `IUserRepositoryRead` + `IUserRepositoryWrite` |
-| Contrato `openapi.yaml` / `api-doc.yaml` | `src/contracts/service.yaml` |
-| Model `UserModel`/`UserSchema` tipados com `IM*` | `Muser`, `userSchema` não tipado (padrão `IM*` ainda não aplicado) |
+| Single repository `IUserRepository` | Read/write split: `IUserRepositoryRead` + `IUserRepositoryWrite` |
+| Contract `openapi.yaml` / `api-doc.yaml` | `src/contracts/service.yaml` |
+| Model `UserModel`/`UserSchema` typed with `IM*` | `Muser`, untyped `userSchema` (the `IM*` pattern is not applied yet) |
 | Entry point `src/app.ts` | `src/main.ts` |
-| Logs com envelope `data`: `Logger.info('MSG', { data: {...} })` | Metadata no nível raiz: `Logger.info('MSG', { eventName, ... })` — é o que o format de trace/cid espera |
-| Rotas com prefixo `/api` (`/api/users`) | Sem prefixo: `/users` |
-| Regras em `.cursor/rules/REPO_RULES.md` | Arquivo não existe neste repo |
+| Logs with a `data` envelope: `Logger.info('MSG', { data: {...} })` | Root-level metadata: `Logger.info('MSG', { eventName, ... })` — what the trace/cid format expects |
+| Routes with an `/api` prefix (`/api/users`) | No prefix: `/users` |
+| Rules in `.cursor/rules/REPO_RULES.md` | File does not exist in this repo |
 
-O que o knowledge base **confirma** e vale seguir aqui: prefixos `I`/`E`, factories
-com `static create()`, controllers finos sem regra de negócio, Conventional Commits,
-branches `feature/*`, `bugfix/*`, `hotfix/*`, `release/*`, cobertura ≥ 80%, e
-comentários apenas quando explicam o "porquê" (nunca código morto ou comentário óbvio).
+What the knowledge base **confirms** and applies here: `I`/`E` prefixes,
+factories with `static create()`, thin controllers with no business rules,
+Conventional Commits, branches `feature/*`, `bugfix/*`, `hotfix/*`, `release/*`,
+coverage ≥ 80%, and comments only when they explain the "why" (never dead code
+or obvious comments).
 
-## Documentação detalhada
+## Detailed documentation
 
-- [docs/architecture.md](docs/architecture.md) — camadas, fluxo request→response, DI
-- [docs/conventions.md](docs/conventions.md) — nomenclatura, erros, estilo, commits
-- [docs/testing.md](docs/testing.md) — Jest, integração com mongodb-memory-server
+- [docs/architecture.md](docs/architecture.md) — layers, request→response flow, DI
+- [docs/conventions.md](docs/conventions.md) — naming, errors, style, commits
+- [docs/testing.md](docs/testing.md) — Jest, integration with mongodb-memory-server
 - [docs/observability.md](docs/observability.md) — OpenTelemetry, logs, trace_id

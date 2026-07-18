@@ -1,9 +1,9 @@
-# Arquitetura
+# Architecture
 
-## Visão geral
+## Overview
 
-Clean Architecture com *vertical slices* por feature. O slice `user` é o exemplo
-canônico — toda nova feature deve espelhá-lo arquivo a arquivo.
+Clean Architecture with vertical slices per feature. The `user` slice is the
+canonical example — every new feature must mirror it file by file.
 
 ```mermaid
 graph TD
@@ -11,26 +11,26 @@ graph TD
     B --> C[interfaces/http/controllers<br/>UserController]
     C --> D[domain/user/service<br/>UserService]
     D --> E[domain/user/repository<br/>IUserRepositoryRead / IUserRepositoryWrite]
-    E -.implementado por.-> F[infrastructure/repository/user<br/>UserRepositoryRead / UserRepositoryWrite]
+    E -.implemented by.-> F[infrastructure/repository/user<br/>UserRepositoryRead / UserRepositoryWrite]
     F --> G[infrastructure/db/mongo<br/>userSchema / Muser]
 ```
 
-**Regra de dependência:** `domain/` é puro — não importa `infrastructure/` nem
-`interfaces/`. Os contratos de repositório vivem no domínio
+**Dependency rule:** `domain/` is pure — it does not import `infrastructure/`
+or `interfaces/`. Repository contracts live in the domain
 (`src/domain/user/repository/user.repository.read.ts` → `IUserRepositoryRead`);
-as implementações vivem na infraestrutura
+implementations live in infrastructure
 (`src/infrastructure/repository/user/user.repository.read.ts` → `UserRepositoryRead`).
-Os **nomes de arquivo são idênticos** nos dois lados — o diretório diferencia
-contrato de implementação. Não confundir ao editar.
+The **file names are identical** on both sides — the directory distinguishes
+contract from implementation. Do not mix them up when editing.
 
-## Read/Write split (CQRS leve)
+## Read/write split (light CQRS)
 
-Cada feature tem dois contratos de repositório:
+Each feature has two repository contracts:
 
 - `I<Feature>RepositoryRead` — `findUserById`, `findUserByEmail`, `listUsers`
 - `I<Feature>RepositoryWrite` — `createUser`, `updateUserById`, `deleteUserById`
 
-O service recebe ambos via objeto de parâmetros:
+The service receives both via a parameter object:
 
 ```ts
 export class UserService implements IUserService {
@@ -44,10 +44,10 @@ export class UserService implements IUserService {
 }
 ```
 
-## Injeção de dependência
+## Dependency injection
 
-DI manual, sem container. Factories estáticas em
-`src/infrastructure/config/factories/`, uma por artefato, com método `static create()`:
+Manual DI, no container. Static factories in
+`src/infrastructure/config/factories/`, one per artifact, with a `static create()`:
 
 ```ts
 // user.service.factory.ts
@@ -68,60 +68,66 @@ export class UserControllerFactory {
 }
 ```
 
-Regras:
+Rules:
 
-1. Toda composição acontece nas factories — nunca dentro de services/controllers.
-2. Factories **não fazem I/O em module load**; efeitos colaterais só dentro de `create()`.
-3. `main.ts` só conhece factories de controller.
+1. All composition happens in factories — never inside services/controllers.
+2. Factories do **no I/O at module load**; side effects only inside `create()`.
+3. `main.ts` only knows controller factories.
 
-## Ciclo de vida do Server (`src/interfaces/http/server.ts`)
+## Server lifecycle (`src/interfaces/http/server.ts`)
 
-Ordem de inicialização no construtor de `Server`:
+Initialization order in the `Server` constructor:
 
-1. Rota `/health` (registrada **antes** dos middlewares — por isso escapa do OpenApiValidator).
+1. `/health` route (registered **before** the middlewares — which is why it escapes the OpenApiValidator).
 2. Middlewares: `express.json({ limit: '3mb' })` → `express.urlencoded` →
-   `ContextAsyncHooks.getExpressMiddlewareTracking()` (cid do traceability) → `helmet()` →
-   middlewares extras passados via `middlewaresToStart` no construtor.
-3. `OpenApiValidator.middleware` com `validateApiSpec: true` e `validateResponses: true`.
-4. Rotas dos controllers (`controller.getRoutes()` montadas em `/`).
-5. **Error handler central** (`errorHandler()`): único ponto que traduz erros em
-   respostas HTTP — `DomainError` → `err.status` + `{ message, status }`;
-   `HttpError` do validator → `{ message, status, errors }`; `Error` genérico →
-   log estruturado + 500 `{ message: 'Internal Server Error', status: 500 }`.
+   `ContextAsyncHooks.getExpressMiddlewareTracking()` (traceability cid) → `helmet()` →
+   extra middlewares passed via `middlewaresToStart` in the constructor.
+3. `OpenApiValidator.middleware` with `validateApiSpec: true` and `validateResponses: true`.
+4. Controller routes (`controller.getRoutes()` mounted at `/`).
+5. **Central error handler** (`errorHandler()`): the only place that translates
+   errors into HTTP responses — `DomainError` → `err.status` + `{ message, status }`;
+   validator `HttpError` → `{ message, status, errors }`; generic `Error` →
+   structured log + 500 `{ message: 'Internal Server Error', status: 500 }`.
 
-Em `main.ts`, a ordem de boot é: telemetria (import na 1ª linha) → validação de env
+In `main.ts`, the boot order is: telemetry (first-line import) → env validation
 (`infrastructure/config/env.ts`, fail-fast) → `new Server(...)` →
-`await databaseSetup()` → `listen()` → registro de graceful shutdown
-(SIGTERM/SIGINT fecham HTTP server e Mongoose, com timeout de segurança).
+`await databaseSetup()` → `listen()` → graceful-shutdown registration
+(SIGTERM/SIGINT close the HTTP server and Mongoose, exit 0 on success, with a
+failsafe timeout).
 
-## Erros de domínio (`src/domain/errors/`)
+## Domain errors (`src/domain/errors/`)
 
-`DomainError` (base, carrega o `status` HTTP) e as especializações `NotFoundError`
-(404) e `ConflictError` (409). O fluxo de erro é sempre:
-service lança erro tipado → controller repassa com `next(error)` → error handler
-central responde no formato do contrato. Nenhuma outra camada monta resposta de erro.
+`DomainError` (base, carries the HTTP `status`) and the specializations
+`NotFoundError` (404) and `ConflictError` (409). The error flow is always:
+service throws a typed error → controller passes it on with `next(error)` →
+central error handler responds in the contract shape. No other layer builds
+error responses.
 
-## Fluxo request→response (exemplo: `POST /users`)
+## Request→response flow (example: `POST /users`)
 
-1. `express.json` faz o parse do body; `ContextAsyncHooks` cria o contexto de tracking (cid); a auto-instrumentação OTel abre o span HTTP.
-2. `OpenApiValidator` valida o request contra `src/contracts/service.yaml` — body inválido → 400 `ValidationError` antes de chegar ao controller.
-3. `UserController.createUser` (arrow function property) extrai `{ id, name, email, createdAt }` do body e chama `userService.createUser(...)`.
-4. `UserService.createUser` aplica regra de negócio: email já em uso → lança `ConflictError` (vira 409 no handler); senão delega ao `userRepositoryWrite.createUser`.
-5. `UserRepositoryWrite` persiste via model `Muser` e devolve um `IUser` puro (projeção esconde `_id`/`__v` — ver `mongo.projection.ts`).
-6. Controller responde `201` com o usuário; qualquer erro vai para `next(error)`.
-7. `OpenApiValidator` valida a **response** contra o contrato antes de enviá-la.
+1. `express.json` parses the body; `ContextAsyncHooks` creates the tracking context (cid); OTel auto-instrumentation opens the HTTP span.
+2. `OpenApiValidator` validates the request against `src/contracts/service.yaml` — an invalid body → 400 `ValidationError` before reaching the controller.
+3. `UserController.createUser` (arrow function property) extracts `{ id, name, email, createdAt }` from the body and calls `userService.createUser(...)`.
+4. `UserService.createUser` applies the business rule: email already in use → throws `ConflictError` (becomes 409 in the handler); otherwise builds the `User` entity and delegates to `userRepositoryWrite.createUser`.
+5. `UserRepositoryWrite` persists via the `Muser` model and returns a plain `IUser` (projection hides `_id`/`__v` — see `mongo.projection.ts`).
+6. The controller responds `201` with the user; any error goes to `next(error)`.
+7. `OpenApiValidator` validates the **response** against the contract before sending it.
 
-## Contrato OpenAPI (`src/contracts/service.yaml`)
+`GET /users` is paginated: `limit`/`offset` query params (validated and coerced
+by the contract), forwarded by the controller to the service, which applies
+defaults (20/0) and passes an `IPagination` to the repository (`skip`/`limit`).
 
-- Fonte de verdade da API; validado em runtime nos dois sentidos.
-- Toda mudança de rota/payload **exige** atualizar o yaml no mesmo PR.
-- O build copia o yaml para `dist/src/contracts` via script `copy-essentials`
-  (o tsc não copia arquivos não-TS). Sem isso, `yarn start` quebra.
-- Rotas não documentadas no contrato são rejeitadas pelo validator.
+## OpenAPI contract (`src/contracts/service.yaml`)
+
+- Source of truth for the API; validated at runtime in both directions.
+- Every route/payload change **requires** updating the yaml in the same PR.
+- The build copies the yaml to `dist/src/contracts` via the `copy-essentials`
+  script (tsc does not copy non-TS files). Without it, `yarn start` breaks.
+- Routes not documented in the contract are rejected by the validator.
 
 ## Entry points
 
-| Arquivo | Papel |
+| File | Role |
 | --- | --- |
-| `src/main.ts` | Produção/dev: telemetria + `Server` + controllers via factories |
-| `src/__tests__/configApp.ts` | Instância de `Server` usada nos testes de integração — **precisa registrar os mesmos controllers** |
+| `src/main.ts` | Production/dev: telemetry + `Server` + controllers via factories |
+| `src/__tests__/configApp.ts` | `Server` instance used by integration tests — **must register the same controllers** |

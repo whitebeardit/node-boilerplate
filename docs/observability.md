@@ -1,76 +1,76 @@
-# Observabilidade — OpenTelemetry + logs estruturados
+# Observability — OpenTelemetry + structured logs
 
-Requisito do projeto: tracing distribuído com OpenTelemetry e logs estruturados
-JSON com o **`trace_id` do OTel em cada linha de log** (correlação log ↔ trace).
+Project requirement: distributed tracing with OpenTelemetry and structured JSON
+logs with the **OTel `trace_id` on every log line** (log ↔ trace correlation).
 
-## Arquitetura
+## Architecture
 
-| Arquivo | Papel |
+| File | Role |
 | --- | --- |
-| `src/infrastructure/telemetry/tracing.ts` | Inicializa o `NodeSDK` (auto-instrumentations + OTLP HTTP exporter) e chama `configureLoggerTraceContext()`. Registra shutdown gracioso em `SIGTERM`/`SIGINT`. |
-| `src/infrastructure/telemetry/logger.ts` | `otelTraceContextFormat` — format winston que injeta `trace_id`, `span_id` e `trace_flags` do span ativo em cada log; `configureLoggerTraceContext()` reconfigura o `Logger` da lib `traceability` preservando o format original (cid + timestamp + json). |
+| `src/infrastructure/telemetry/tracing.ts` | Initializes the `NodeSDK` (auto-instrumentations + OTLP HTTP exporter) and calls `configureLoggerTraceContext()`. Registers graceful shutdown on `SIGTERM`/`SIGINT`. |
+| `src/infrastructure/telemetry/logger.ts` | `otelTraceContextFormat` — a winston format that injects `trace_id`, `span_id` and `trace_flags` from the active span into every log; `configureLoggerTraceContext()` reconfigures the `traceability` `Logger` preserving its original format (cid + timestamp + json). |
 
-### Ordem de inicialização (crítico)
+### Initialization order (critical)
 
 ```ts
-// src/main.ts — PRIMEIRA linha, antes de qualquer import de express/mongoose:
+// src/main.ts — FIRST line, before any express/mongoose import:
 import './infrastructure/telemetry/tracing';
 ```
 
-A auto-instrumentação funciona por *patch* de módulos no `require` — se express ou
-mongoose forem carregados antes, não há spans. Nunca mova esse import.
+Auto-instrumentation works by patching modules at `require` time — if express or
+mongoose load first, there are no spans. Never move this import.
 
-### Variáveis de ambiente (ver `.env.example`)
+### Environment variables (see `.env.example`)
 
-| Variável | Efeito |
+| Variable | Effect |
 | --- | --- |
-| `OTEL_SDK_DISABLED=true` | Desliga o SDK por completo (usado em `.env.test`) |
-| `OTEL_SERVICE_NAME` | `service.name` do resource (default: `node-boilerplate`) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Endpoint OTLP HTTP do collector (default do SDK: `http://localhost:4318`) |
+| `OTEL_SDK_DISABLED=true` | Disables the SDK entirely (used in `.env.test`) |
+| `OTEL_SERVICE_NAME` | Resource `service.name` (default: `node-boilerplate`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP collector endpoint (SDK default: `http://localhost:4318`) |
 
-## Correlação log ↔ trace
+## Log ↔ trace correlation
 
-Dois identificadores convivem em cada linha de log:
+Two identifiers coexist on every log line:
 
-- **`trace_id` / `span_id`** — contexto OpenTelemetry do span ativo (W3C Trace Context,
-  propagado entre serviços via header `traceparent`). Use-os para pular do log para o
-  trace no Jaeger/Tempo/Datadog.
-- **`cid`** — correlation id legado da lib `traceability`, criado pelo middleware
-  `ContextAsyncHooks.getExpressMiddlewareTracking()` em `server.ts`. Mantido por
-  compatibilidade com o ecossistema whitebeardit.
+- **`trace_id` / `span_id`** — the OpenTelemetry context of the active span (W3C
+  Trace Context, propagated between services via the `traceparent` header). Use
+  them to jump from a log to the trace in Jaeger/Tempo/Datadog.
+- **`cid`** — the legacy correlation id from the `traceability` lib, created by
+  the `ContextAsyncHooks.getExpressMiddlewareTracking()` middleware in
+  `server.ts`. Kept for compatibility with the whitebeardit ecosystem.
 
-Linha de log real emitida durante um request HTTP:
+A real log line emitted during an HTTP request:
 
 ```json
 {"eventName":"ping.received","level":"info","message":"ping received","span_id":"e3f91c2cded0db80","timestamp":"2026-07-18T11:44:59.032Z","trace_flags":"01","trace_id":"3c060d79abe804651b8e5b18f0ee6c81"}
 ```
 
-Fora de um span ativo (ex.: boot da aplicação), os campos de trace simplesmente
-não aparecem — o format é no-op sem span válido.
+Outside an active span (e.g. application boot), the trace fields are simply
+absent — the format is a no-op without a valid span.
 
-## Regras de logging (obrigatórias)
+## Logging rules (mandatory)
 
-1. **Nunca `console.log`**. Sempre:
+1. **Never `console.log`**. Always:
    ```ts
    import { Logger } from 'traceability';
    ```
-2. Message curta e humana + metadata estruturada com `eventName` no padrão
-   `<contexto>.<evento>`:
+2. Short human message + structured metadata with an `eventName` in the
+   `<context>.<event>` pattern:
    ```ts
    Logger.info('User created', { eventName: 'user.created', userId: user.id });
    Logger.error(err.message, { eventName: 'server.error', stack: err.stack });
    ```
-3. **Nunca `JSON.stringify` dentro da message** — os campos devem ser pesquisáveis
-   como atributos do JSON de log.
-4. Não logar dados sensíveis (senhas, tokens, PII desnecessária).
+3. **Never `JSON.stringify` inside the message** — fields must be searchable
+   as attributes of the log JSON.
+4. Do not log sensitive data (passwords, tokens, unnecessary PII).
 
 ## Spans
 
-A auto-instrumentação (`@opentelemetry/auto-instrumentations-node`, com
-`instrumentation-fs` desabilitada) já cria spans para: HTTP server/client, rotas
-Express (incl. middlewares) e operações Mongoose/MongoDB.
+Auto-instrumentation (`@opentelemetry/auto-instrumentations-node`, with
+`instrumentation-fs` disabled) already creates spans for: HTTP server/client,
+Express routes (including middlewares) and Mongoose/MongoDB operations.
 
-Para operações de negócio relevantes, crie spans manuais no service:
+For relevant business operations, create manual spans in the service:
 
 ```ts
 import { trace } from '@opentelemetry/api';
@@ -80,7 +80,7 @@ const tracer = trace.getTracer('user-service');
 async createUser(params: IParamsCreateUser): Promise<IUser> {
   return tracer.startActiveSpan('UserService.createUser', async (span) => {
     try {
-      // ... lógica existente ...
+      // ... existing logic ...
       return result;
     } catch (error) {
       span.recordException(error as Error);
@@ -92,27 +92,27 @@ async createUser(params: IParamsCreateUser): Promise<IUser> {
 }
 ```
 
-Todo `Logger.*` chamado dentro de `startActiveSpan` herda o `trace_id`/`span_id`
-automaticamente.
+Every `Logger.*` call inside `startActiveSpan` inherits the `trace_id`/`span_id`
+automatically.
 
-## Testes
+## Tests
 
-- `.env.test` define `OTEL_SDK_DISABLED=true` — nenhum exporter/span nos testes.
-- O format de correlação tem teste unitário em
-  `src/__tests__/unit/telemetry.unit.test.ts`. Ele registra um
-  `AsyncLocalStorageContextManager` manualmente (papel que o NodeSDK cumpre em
-  produção) e usa `trace.wrapSpanContext()` para simular um span ativo.
+- `.env.test` sets `OTEL_SDK_DISABLED=true` — no exporter/spans in tests.
+- The correlation format has a unit test in
+  `src/__tests__/unit/telemetry.unit.test.ts`. It registers an
+  `AsyncLocalStorageContextManager` manually (the role the NodeSDK plays in
+  production) and uses `trace.wrapSpanContext()` to simulate an active span.
 
-## Verificação local
+## Local verification
 
-1. Suba um collector com UI:
+1. Start a collector with a UI:
    ```bash
    docker run --rm -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one:latest
    ```
-2. `cp .env.example .env` (ajuste `DATABASE_URI` se necessário) e `yarn dev`.
-3. Faça um request (`curl http://localhost:3000/users`) e confira:
-   - o log JSON no stdout contém `trace_id`/`span_id`;
-   - o trace aparece em `http://localhost:16686` com o mesmo `trace_id`.
+2. `cp .env.example .env` (adjust `DATABASE_URI` if needed) and `yarn dev`.
+3. Make a request (`curl http://localhost:3000/users`) and check:
+   - the JSON log on stdout contains `trace_id`/`span_id`;
+   - the trace shows up at `http://localhost:16686` with the same `trace_id`.
 
-Sem collector rodando, a aplicação funciona normalmente — o exporter apenas
-registra warnings de export falho.
+Without a running collector the application works normally — the exporter only
+logs failed-export warnings.
