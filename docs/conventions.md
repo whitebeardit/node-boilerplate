@@ -21,12 +21,12 @@ Lowercase with dots as the type separator: `<feature>.<type>[.<variant>].ts`.
 | Mongoose schema | `<feature>.schema.ts` | `src/infrastructure/db/mongo/schema/user.schema.ts` |
 | Mongoose model | `<feature>.model.ts` | `src/infrastructure/db/mongo/models/user.model.ts` |
 | Controller | `<feature>.controller.ts` | `src/interfaces/http/controllers/user.controller.ts` |
+| Controller interface | `controller.interface.ts` | `src/interfaces/http/controllers/controller.interface.ts` |
 | Factory | `<feature>.<type>.factory.ts` | `src/infrastructure/config/factories/user.service.factory.ts` |
 | Unit test | `<subject>.unit.test.ts` | `src/__tests__/unit/user.service.unit.test.ts` |
 | Integration test | `<subject>.<action>.int.test.ts` | `src/__tests__/integration/user.create.int.test.ts` |
 
-Historical exception: `src/interfaces/http/controllers/IController.ts`
-(PascalCase). Do not create new exceptions.
+No exceptions — every file follows the pattern above.
 
 ## Symbol naming
 
@@ -35,10 +35,11 @@ Historical exception: `src/interfaces/http/controllers/IController.ts`
 | Domain interface | `I` + PascalCase | `IUser`, `IUserService`, `IController`, `IPagination` |
 | Parameter interface | `IParams` + action/context | `IParamsCreateUser`, `IParamsUpdateUser`, `IParamsUserService` |
 | Repository contract | `I<Feature>Repository<Read\|Write>` | `IUserRepositoryRead`, `IUserRepositoryWrite` |
+| Persistence interface | `IM` + PascalCase, extends the domain interface | `IMUser extends IUser` (adds `_id: Types.ObjectId`; lives in the schema file) |
 | Class | PascalCase, no prefix | `UserService`, `UserController`, `Server`, `User` |
 | Factory | `<Feature><Type>Factory` | `UserServiceFactory`, `UserControllerFactory` |
-| Mongoose model | `M` + lowercase | `Muser` |
-| Mongoose schema | camelCase + `Schema` | `userSchema` |
+| Mongoose model | `M` + lowercase, typed with `IM*` | `Muser = mongoose.model<IMUser>('user', userSchema)` |
+| Mongoose schema | camelCase + `Schema`, typed with `IM*` | `userSchema = new mongoose.Schema<IMUser>({...})` |
 | Variables/properties | camelCase | `userRepositoryRead`, `apiSpecLocation` |
 | Constants | UPPER_SNAKE_CASE | `OPEN_API_SPEC_FILE_LOCATION`, `HIDE_MONGO_INTERNAL_FIELDS`, `DEFAULT_LIST_LIMIT` |
 | Enum (Agents.md, no example in code yet) | `E` + PascalCase, UPPER members | `EStatus.ACTIVE` |
