@@ -9,8 +9,8 @@ yarn test:int       # jest --runInBand --forceExit --config ./jest/jest.int-conf
 yarn test:coverage  # cobertura de ambos (meta: ≥ 80% linhas/branches)
 ```
 
-⚠️ `yarn test:ci` e `yarn test:component` referenciam configs que **não existem**
-(`jest/jest.ci-config.ts`, `jest/jest.component-config.ts`). Não usar sem antes criá-las.
+O CI (`.github/workflows/ci.yml`) roda lint → build → test:unit → test:int em
+pushes para `main`/`stage` e em pull requests.
 
 ## Configuração (diretório `jest/`, fora de `src/`)
 

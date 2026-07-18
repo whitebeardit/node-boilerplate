@@ -90,7 +90,7 @@ Detalhes em [docs/architecture.md](docs/architecture.md).
 - Rotas não descritas no contrato são rejeitadas pelo validator (`/health` funciona porque é registrada antes dos middlewares).
 - O build precisa do `copy-essentials` (yaml não é compilado pelo tsc) — já embutido em `yarn build`.
 - Teste de integração só enxerga controllers registrados em `src/__tests__/configApp.ts`.
-- Scripts `test:ci` e `test:component` referenciam configs Jest que **não existem** (`jest/jest.ci-config.ts`, `jest/jest.component-config.ts`) — não usar.
+- Commits passam pelo commitlint (hook `commit-msg` do husky): tipo obrigatório, subject em minúsculas, header ≤ 72 chars.
 - `release.config.js` chama `./setup/set-version.sh`, que não existe no repo (só roda em CI com `GITHUB_REF_NAME`).
 - Variáveis de ambiente obrigatórias são validadas em `src/infrastructure/config/env.ts` (fail-fast no boot) — ler env por lá, não via `process.env` espalhado.
 

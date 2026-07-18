@@ -93,7 +93,9 @@ compatíveis com o contrato atual:
 - **ESLint 9 flat config** (`eslint.config.mjs`): `typescript-eslint` recommended;
   variáveis/args não usados só são permitidos com prefixo `_`.
 - **TypeScript strict** (`tsconfig.json`): target es2016, CommonJS, `esModuleInterop`.
-- **Husky pre-commit**: roda `yarn lint`.
+- **Husky**: `pre-commit` roda `yarn lint`; `commit-msg` roda commitlint
+  (`commitlint.config.js`, baseado no padrão da organização — tipos do KB,
+  subject em minúsculas, header ≤ 72 chars).
 
 ## Commits, branches e release
 
