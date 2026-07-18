@@ -1,5 +1,5 @@
 import { UserController } from '../../../interfaces/http/controllers/user.controller';
-import { IController } from '../../../interfaces/http/controllers/IController';
+import { IController } from '../../../interfaces/http/controllers/controller.interface';
 import { UserServiceFactory } from './user.service.factory';
 
 export class UserControllerFactory {

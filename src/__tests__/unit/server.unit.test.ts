@@ -9,7 +9,7 @@ import {
   Router,
 } from 'express';
 import { Server } from '../../interfaces/http/server';
-import { IController } from '../../interfaces/http/controllers/IController';
+import { IController } from '../../interfaces/http/controllers/controller.interface';
 
 const OPEN_API_SPEC_FILE_LOCATION = path.resolve(
   __dirname,

@@ -24,7 +24,7 @@ yarn lint:fix       # eslint --fix
 yarn prettier       # prettier --write on src/
 ```
 
-**Mandatory checklist before delivering any change** (Agents.md §6.5):
+**Mandatory checklist before delivering any change** (Agents.md §7):
 
 ```bash
 yarn prettier && yarn lint && yarn build && yarn test
@@ -57,8 +57,8 @@ constructor (an `IParams*` object); composition happens **only** in factories.
 3. `src/domain/<feature>/repository/<feature>.repository.read.ts` and `.write.ts` — contracts `I<Feature>RepositoryRead/Write`
 4. `src/domain/<feature>/<feature>.entity.ts` — class `<Feature> implements I<Feature>` with `readonly` properties
 5. `src/domain/<feature>/service/<feature>.service.ts` — `<Feature>Service implements I<Feature>Service`; business rules throw errors from `src/domain/errors/` (`NotFoundError`, `ConflictError`) — never decide HTTP status in the service
-6. `src/infrastructure/db/mongo/schema/<feature>.schema.ts` — `export const <feature>Schema`
-7. `src/infrastructure/db/mongo/models/<feature>.model.ts` — `export const M<feature>` (e.g. `Muser`)
+6. `src/infrastructure/db/mongo/schema/<feature>.schema.ts` — `IM<Feature> extends I<Feature>` (adds `_id: Types.ObjectId`) and `export const <feature>Schema = new Schema<IM<Feature>>(...)`
+7. `src/infrastructure/db/mongo/models/<feature>.model.ts` — `export const M<feature> = mongoose.model<IM<Feature>>(...)` (e.g. `Muser`)
 8. `src/infrastructure/repository/<feature>/<feature>.repository.read.ts` and `.write.ts` — implementations (same file names as the contracts, different directories); use `.lean()` with `HIDE_MONGO_INTERNAL_FIELDS` so `_id`/`__v` never leak
 9. `src/interfaces/http/controllers/<feature>.controller.ts` — `<Feature>Controller implements IController`, receives `I<Feature>Service` (the interface, not the class); errors go to `next(error)` — the central error handler answers in the contract shape
 10. `src/infrastructure/config/factories/<feature>.service.factory.ts` and `<feature>.controller.factory.ts` — `static create()`
@@ -70,9 +70,9 @@ Details in [docs/architecture.md](docs/architecture.md).
 
 ## Critical conventions (summary)
 
-- Files: lowercase with dots — `user.service.ts`, `user.repository.read.ts`, `user.controller.factory.ts`. Existing exception: `IController.ts`.
-- Interfaces prefixed with `I` (`IUser`, `IUserService`, `IController`); constructor/method parameter objects as `IParams*` (`IParamsCreateUser`, `IParamsUserService`).
-- Mongoose models prefixed with `M` (`Muser`); schemas in camelCase (`userSchema`).
+- Files: lowercase with dots — `user.service.ts`, `user.repository.read.ts`, `user.controller.factory.ts`, `controller.interface.ts`. No exceptions.
+- Interfaces prefixed with `I` (`IUser`, `IUserService`, `IController`); constructor/method parameter objects as `IParams*` (`IParamsCreateUser`, `IParamsUserService`); persistence interfaces as `IM*` (`IMUser extends IUser`, defined next to the schema).
+- Mongoose models prefixed with `M` and typed (`Muser = mongoose.model<IMUser>`); schemas in camelCase and typed (`userSchema = new Schema<IMUser>`).
 - Constants in `UPPER_SNAKE_CASE` (`OPEN_API_SPEC_FILE_LOCATION`).
 - Tests: `describe('When we ...')` / `it('should ...')`.
 - Commits: Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`) — required by semantic-release and enforced by commitlint.
@@ -98,35 +98,32 @@ Details in [docs/architecture.md](docs/architecture.md).
 - `release.config.js` calls `./setup/set-version.sh`, which does not exist in the repo (only runs in CI with `GITHUB_REF_NAME`).
 - Required environment variables are validated in `src/infrastructure/config/env.ts` (fail-fast at boot) — read env through it, not via scattered `process.env`.
 
-## Known divergences: organization standards × real code
+## Organization standards
 
-`Agents.md` (root) and the knowledge base at `.cursor/rules/ai_knowledge_base/`
-(submodule — initialize with `git submodule update --init`) describe the
-organization's **generic** whitebeardit standard. All GitHub access is via
-**SSH**: `.gitmodules` uses an HTTPS URL, but the local git has the global
-rewrite `url."git@github.com:".insteadOf "https://github.com/"` — never use
-HTTPS with credentials for git operations. Where they diverge from this
-repository, **follow the real code**:
+**`Agents.md` (root) and the organization knowledge base are aligned with this
+repository** — both were rewritten to mirror the real code, and this
+boilerplate is the **reference implementation** of the standard. If the code
+and a standards doc ever drift apart again, the real code prevails; update the
+docs in the same change.
 
-| Organization standard says | Real code in this repo |
-| --- | --- |
-| Factories in `src/configurations/factory/` | `src/infrastructure/config/factories/` |
-| Controllers in `src/application/` (with DTOs, middlewares, validators) | `src/interfaces/http/controllers/` — no DTOs (contract-first validation via OpenAPI) |
-| Domain grouped by type: `src/domain/{entity,repository,services}/interfaces/` | Domain by feature: `src/domain/<feature>/{interfaces,repository,service}/` |
-| Infra: `src/infrastructure/database/mongo/{models,schemas,repositories}/` | `src/infrastructure/db/mongo/{models,schema}/` + `src/infrastructure/repository/<feature>/` |
-| Single repository `IUserRepository` | Read/write split: `IUserRepositoryRead` + `IUserRepositoryWrite` |
-| Contract `openapi.yaml` / `api-doc.yaml` | `src/contracts/service.yaml` |
-| Model `UserModel`/`UserSchema` typed with `IM*` | `Muser`, untyped `userSchema` (the `IM*` pattern is not applied yet) |
-| Entry point `src/app.ts` | `src/main.ts` |
-| Logs with a `data` envelope: `Logger.info('MSG', { data: {...} })` | Root-level metadata: `Logger.info('MSG', { eventName, ... })` — what the trace/cid format expects |
-| Routes with an `/api` prefix (`/api/users`) | No prefix: `/users` |
-| Rules in `.cursor/rules/REPO_RULES.md` | File does not exist in this repo |
+The knowledge base lives at `.cursor/rules/ai_knowledge_base/` (submodule —
+initialize with `git submodule update --init`), a separate org-wide repository.
+Backend guides are under `playbooks/engineering/backend/` (index `AGENTS.md`
+plus one guide per layer); commit/branch conventions under
+`playbooks/engineering/code-versioning/`; global LLM rules under
+`playbooks/engineering/general-rules/AGENTS.md`.
 
-What the knowledge base **confirms** and applies here: `I`/`E` prefixes,
+All GitHub access is via **SSH**: `.gitmodules` uses an HTTPS URL, but the
+local git has the global rewrite
+`url."git@github.com:".insteadOf "https://github.com/"` — never use HTTPS with
+credentials for git operations.
+
+Key rules the standards enforce here: `I`/`IParams`/`IM`/`E` prefixes,
 factories with `static create()`, thin controllers with no business rules,
-Conventional Commits, branches `feature/*`, `bugfix/*`, `hotfix/*`, `release/*`,
-coverage ≥ 80%, and comments only when they explain the "why" (never dead code
-or obvious comments).
+typed domain errors with a central handler, contract-first validation,
+Conventional Commits, branches `feature/*`, `bugfix/*`, `hotfix/*`,
+`release/*`, coverage ≥ 80% (merged), logs with root-level `eventName`
+metadata, and comments only when they explain the "why".
 
 ## Detailed documentation
 
