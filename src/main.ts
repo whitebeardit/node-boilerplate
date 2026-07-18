@@ -33,6 +33,7 @@ async function start() {
     });
     httpServer.close(async () => {
       await app.closeDatabase();
+      process.exit(0);
     });
     // Failsafe: force exit if connections refuse to drain
     setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MILLISECONDS).unref();
