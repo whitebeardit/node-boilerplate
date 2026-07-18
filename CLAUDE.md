@@ -100,37 +100,30 @@ Details in [docs/architecture.md](docs/architecture.md).
 
 ## Organization standards
 
-**`Agents.md` (root) is aligned with this repository** — it was rewritten to
-mirror the real code, and this boilerplate is the reference implementation of
-the standard. Follow it together with the docs below.
+**`Agents.md` (root) and the organization knowledge base are aligned with this
+repository** — both were rewritten to mirror the real code, and this
+boilerplate is the **reference implementation** of the standard. If the code
+and a standards doc ever drift apart again, the real code prevails; update the
+docs in the same change.
 
-The knowledge base at `.cursor/rules/ai_knowledge_base/` (submodule —
-initialize with `git submodule update --init`) is a **separate, org-wide
-repository** and still describes a generic layout that diverges from this repo.
+The knowledge base lives at `.cursor/rules/ai_knowledge_base/` (submodule —
+initialize with `git submodule update --init`), a separate org-wide repository.
+Backend guides are under `playbooks/engineering/backend/` (index `AGENTS.md`
+plus one guide per layer); commit/branch conventions under
+`playbooks/engineering/code-versioning/`; global LLM rules under
+`playbooks/engineering/general-rules/AGENTS.md`.
+
 All GitHub access is via **SSH**: `.gitmodules` uses an HTTPS URL, but the
 local git has the global rewrite
 `url."git@github.com:".insteadOf "https://github.com/"` — never use HTTPS with
-credentials for git operations. Where the knowledge base diverges, **follow the
-real code and `Agents.md`**:
+credentials for git operations.
 
-| Knowledge base says | Real code in this repo |
-| --- | --- |
-| Factories in `src/configurations/factory/` | `src/infrastructure/config/factories/` |
-| Controllers in `src/application/` (with DTOs, middlewares, validators) | `src/interfaces/http/controllers/` — no DTOs (contract-first validation via OpenAPI) |
-| Domain grouped by type: `src/domain/{entity,repository,services}/interfaces/` | Domain by feature: `src/domain/<feature>/{interfaces,repository,service}/` |
-| Infra: `src/infrastructure/database/mongo/{models,schemas,repositories}/` | `src/infrastructure/db/mongo/{models,schema}/` + `src/infrastructure/repository/<feature>/` |
-| Single repository `IUserRepository` | Read/write split: `IUserRepositoryRead` + `IUserRepositoryWrite` |
-| Contract `api-doc.yaml` | `src/contracts/service.yaml` |
-| `IM*` interface declared in the model file | Declared in the schema file (`user.schema.ts`) to keep the schema → model import direction cycle-free |
-| Logs with a `data` envelope: `Logger.info('MSG', { data: {...} })` | Root-level metadata: `Logger.info('MSG', { eventName, ... })` — what the trace/cid format expects |
-| Routes with an `/api` prefix (`/api/users`) | No prefix: `/users` |
-| Rules in `.cursor/rules/REPO_RULES.md` | File does not exist in this repo |
-
-What the knowledge base **confirms** and applies here: `I`/`IM`/`E` prefixes,
+Key rules the standards enforce here: `I`/`IParams`/`IM`/`E` prefixes,
 factories with `static create()`, thin controllers with no business rules,
-Conventional Commits, branches `feature/*`, `bugfix/*`, `hotfix/*`, `release/*`,
-coverage ≥ 80%, and comments only when they explain the "why" (never dead code
-or obvious comments).
+typed domain errors with a central handler, contract-first validation,
+Conventional Commits, branches `feature/*`, `bugfix/*`, `hotfix/*`,
+`release/*`, coverage ≥ 80% (merged), logs with root-level `eventName`
+metadata, and comments only when they explain the "why".
 
 ## Detailed documentation
 

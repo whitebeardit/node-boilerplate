@@ -82,7 +82,7 @@ All error responses follow the contract's `Error`/`ValidationError` schemas
 
 ## OpenAPI contract (`src/contracts/service.yaml`)
 
-Naming rules from the knowledge base (`backend/contracts/CONTRACTS_LAYER.md`),
+Naming rules from the knowledge base (`playbooks/engineering/backend/contracts/CONTRACTS_LAYER.md`),
 compatible with the current contract:
 
 - Schemas/entities: PascalCase (`User`, `Error`)
@@ -106,7 +106,7 @@ compatible with the current contract:
 
 - **Conventional Commits required** — semantic-release parses messages to
   version (branches `main` and `stage`). Types and impact (full guide in
-  `.cursor/rules/ai_knowledge_base/code-versioning/commits/`):
+  `.cursor/rules/ai_knowledge_base/playbooks/engineering/code-versioning/commits/`):
   - `feat:` → minor · `fix:` → patch · `docs:`, `style:`, `refactor:`, `perf:`, `test:`, `chore:` → no bump
   - Format: `<type>[optional scope]: <description>` (e.g. `feat(user): add email uniqueness check`)
 - **Branches**: `<type>/<kebab-case-description>` — `feature/add-user-authentication`,
@@ -115,7 +115,7 @@ compatible with the current contract:
 
 ## Comments
 
-Organization knowledge base standard (`backend/AGENTS.md`):
+Organization knowledge base standard (`playbooks/engineering/backend/AGENTS.md`):
 
 - Comment only when it adds real value — explain the **why**, never the obvious.
 - Never leave commented-out code (dead code).
