@@ -18,8 +18,7 @@ Lowercase with dots as the type separator: `<feature>.<type>[.<variant>].ts`.
 | Repository contract | `<feature>.repository.read.ts` / `.write.ts` | `src/domain/user/repository/user.repository.read.ts` |
 | Service | `<feature>.service.ts` | `src/domain/user/service/user.service.ts` |
 | Repository implementation | `<feature>.repository.read.ts` / `.write.ts` | `src/infrastructure/repository/user/user.repository.write.ts` |
-| Mongoose schema | `<feature>.schema.ts` | `src/infrastructure/db/mongo/schema/user.schema.ts` |
-| Mongoose model | `<feature>.model.ts` | `src/infrastructure/db/mongo/models/user.model.ts` |
+| DynamoDB table definition | `<feature>.table.ts` | `src/infrastructure/db/dynamo/tables/user.table.ts` |
 | Controller | `<feature>.controller.ts` | `src/interfaces/http/controllers/user.controller.ts` |
 | Controller interface | `controller.interface.ts` | `src/interfaces/http/controllers/controller.interface.ts` |
 | Factory | `<feature>.<type>.factory.ts` | `src/infrastructure/config/factories/user.service.factory.ts` |
@@ -35,13 +34,13 @@ No exceptions — every file follows the pattern above.
 | Domain interface | `I` + PascalCase | `IUser`, `IUserService`, `IController`, `IPagination` |
 | Parameter interface | `IParams` + action/context | `IParamsCreateUser`, `IParamsUpdateUser`, `IParamsUserService` |
 | Repository contract | `I<Feature>Repository<Read\|Write>` | `IUserRepositoryRead`, `IUserRepositoryWrite` |
-| Persistence interface | `IM` + PascalCase, extends the domain interface | `IMUser extends IUser` (adds `_id: Types.ObjectId`; lives in the schema file) |
+| Persistence interface | `IM` + PascalCase, derived from the domain interface | `IMUser extends Omit<IUser, 'createdAt'>` (dates stored as ISO strings; lives in the table file) |
 | Class | PascalCase, no prefix | `UserService`, `UserController`, `Server`, `User` |
 | Factory | `<Feature><Type>Factory` | `UserServiceFactory`, `UserControllerFactory` |
-| Mongoose model | `M` + lowercase, typed with `IM*` | `Muser = mongoose.model<IMUser>('user', userSchema)` |
-| Mongoose schema | camelCase + `Schema`, typed with `IM*` | `userSchema = new mongoose.Schema<IMUser>({...})` |
+| Table definition | camelCase + `TableDefinition` | `userTableDefinition: CreateTableCommandInput` |
+| Item mappers | `to<Feature>` / `to<Feature>Item` | `toUser(item: IMUser): IUser`, `toUserItem(user: IUser): IMUser` |
 | Variables/properties | camelCase | `userRepositoryRead`, `apiSpecLocation` |
-| Constants | UPPER_SNAKE_CASE | `OPEN_API_SPEC_FILE_LOCATION`, `HIDE_MONGO_INTERNAL_FIELDS`, `DEFAULT_LIST_LIMIT` |
+| Constants | UPPER_SNAKE_CASE | `OPEN_API_SPEC_FILE_LOCATION`, `USER_TABLE_NAME`, `DEFAULT_LIST_LIMIT` |
 | Enum (Agents.md, no example in code yet) | `E` + PascalCase, UPPER members | `EStatus.ACTIVE` |
 
 Methods have intent-revealing names: `findUserByEmail`, `updateUserById`,

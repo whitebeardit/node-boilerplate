@@ -23,7 +23,7 @@ implementation** of this standard — every stub below mirrors its real code.
 | ├─ Controllers | `src/interfaces/http/controllers/` | Thin adapters implementing `IController` (`controller.interface.ts`) |
 | **Infrastructure** | `src/infrastructure/` | External concerns |
 | ├─ Repository implementations | `src/infrastructure/repository/<feature>/` | Same file names as the domain contracts |
-| ├─ DB (Mongo) | `src/infrastructure/db/mongo/{schema,models}/` | Typed Mongoose schemas (`Schema<IM*>`) & models (`model<IM*>`) |
+| ├─ DB (DynamoDB) | `src/infrastructure/db/dynamo/` | Client (`dynamo.client.ts`), lifecycle adapter (`dynamo.database.ts`) and `tables/` (typed table definitions + `IM*` item mappers) |
 | ├─ Config | `src/infrastructure/config/` | `env.ts` (fail-fast env validation) |
 | ├─ Factories (composition root) | `src/infrastructure/config/factories/` | `<feature>.controller.factory.ts`, `<feature>.service.factory.ts` |
 | ├─ Telemetry | `src/infrastructure/telemetry/` | OpenTelemetry SDK bootstrap + trace-context log injection |
@@ -31,7 +31,7 @@ implementation** of this standard — every stub below mirrors its real code.
 | ├─ External services *(when needed)* | `src/infrastructure/external/services/` | HTTP/GRPC clients for third-party APIs |
 | **Contracts** | `src/contracts/service.yaml` | OpenAPI 3.0 spec — validated at runtime (requests **and** responses) |
 | **Tests** | `src/__tests__/{unit,integration}/` | Mandatory suffixes `.unit.test.ts` / `.int.test.ts` |
-| **Test bootstrap** | `jest/` (outside `src/`) | Jest configs, mongodb-memory-server setup |
+| **Test bootstrap** | `jest/` (outside `src/`) | Jest configs, dynalite (in-memory DynamoDB) setup |
 | **Entry point** | `src/main.ts` | Telemetry import (first line) → env → `Server` → graceful shutdown |
 | **Root config** | `./` | `package.json`, `tsconfig.json`, `eslint.config.mjs`, `.prettierrc`, `commitlint.config.js`, `.env.example`, `Dockerfile`, `.github/workflows/ci.yml` |
 
@@ -55,7 +55,7 @@ Lowercase with dots as the type separator — `<feature>.<type>[.<variant>].ts`:
 | --- | --- | --- | --- |
 | **Domain interface** | `I` | Pascal | `IUser`, `IUserService`, `IPagination` |
 | **Parameter object** | `IParams` | Pascal | `IParamsCreateUser`, `IParamsUserService` |
-| **Persistence interface** (Mongo) | `IM` | Pascal | `IMUser extends IUser` |
+| **Persistence interface** (DynamoDB) | `IM` | Pascal | `IMUser extends Omit<IUser, 'createdAt'>` |
 | **Enum** | `E` | Pascal | `EStatus` with members `ACTIVE`, `PENDING` |
 
 Other rules:
@@ -67,37 +67,36 @@ Other rules:
 
 ### 2.3 IM Interfaces Pattern
 
-Persistence documents need Mongo-specific fields. The `IM*` interface extends
-the domain interface and lives **in the schema file** (not the model file) to
-keep the schema → model import direction free of cycles:
+Persistence items need storage-compatible types (DynamoDB has no native date
+type). The `IM*` interface derives from the domain interface and lives **in the
+table file**, next to the table definition and the item mappers:
 
 ```ts
-// src/infrastructure/db/mongo/schema/user.schema.ts
-import mongoose, { Types } from 'mongoose';
+// src/infrastructure/db/dynamo/tables/user.table.ts
+import { CreateTableCommandInput } from '@aws-sdk/client-dynamodb';
 import { IUser } from '../../../../domain/user/interfaces/user.interface';
 
-export interface IMUser extends IUser {
-  _id: Types.ObjectId;
+export interface IMUser extends Omit<IUser, 'createdAt'> {
+  createdAt: string; // ISO-8601
 }
 
-export const userSchema = new mongoose.Schema<IMUser>({
-  id: { type: String, required: true, unique: true },
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  createdAt: { type: Date, required: true, default: Date.now },
-});
+export const USER_TABLE_NAME = env.usersTableName;
+export const USER_EMAIL_INDEX_NAME = 'email-index';
+
+export const userTableDefinition: CreateTableCommandInput = {
+  TableName: USER_TABLE_NAME,
+  BillingMode: 'PAY_PER_REQUEST',
+  KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
+  GlobalSecondaryIndexes: [/* email-index for lookups by email */],
+  // ...
+};
+
+export function toUserItem(user: IUser): IMUser { /* domain → item */ }
+export function toUser(item: IMUser): IUser { /* item → domain, field by field */ }
 ```
 
-```ts
-// src/infrastructure/db/mongo/models/user.model.ts
-import mongoose from 'mongoose';
-import { IMUser, userSchema } from '../schema/user.schema';
-
-export const Muser = mongoose.model<IMUser>('user', userSchema);
-```
-
-Models are prefixed with `M` (`Muser`). Repositories return plain domain
-objects: reads use `.lean<IUser>()` with a projection that hides `_id`/`__v`.
+Repositories return plain domain objects: every read/write maps through
+`toUser`, which picks fields explicitly so storage internals never leak.
 
 ---
 
@@ -108,7 +107,7 @@ objects: reads use `.lean<IUser>()` with a projection that hides `_id`/`__v`.
 ```ts
 // src/domain/user/interfaces/user.interface.ts
 export interface IUser {
-  id: string; // exposed id (string — not the Mongo ObjectId)
+  id: string; // exposed id (string — also the table partition key)
   name: string;
   email: string;
   createdAt: Date;
@@ -221,7 +220,7 @@ import { env } from './infrastructure/config/env'; // fail-fast validation
 const app = new Server({
   port: env.port,
   controllers: [UserControllerFactory.create()],
-  databaseURI: env.databaseUri,
+  database: new DynamoDatabase(),
   apiSpecLocation: OPEN_API_SPEC_FILE_LOCATION,
 });
 
@@ -249,7 +248,7 @@ Bootstrap-phase I/O happens **inside** `start()`, never at module load.
   `Logger.info('User created', { eventName: 'user.created', userId })`.
   Never `JSON.stringify` inside the message.
 * OpenTelemetry (`src/infrastructure/telemetry/`) auto-instruments Express,
-  Mongoose and HTTP. Every log emitted inside a span automatically gains
+  the AWS SDK (DynamoDB) and HTTP. Every log emitted inside a span automatically gains
   `trace_id`/`span_id`/`trace_flags` alongside the legacy `cid`.
 * Tests run with `OTEL_SDK_DISABLED=true`.
 
@@ -281,9 +280,9 @@ Bootstrap-phase I/O happens **inside** `start()`, never at module load.
 * **Unit**: mock all side-effects via the `I*` contracts (`jest.Mocked<I*>`);
   deterministic, <100ms per test.
 * **Integration**: real HTTP through supertest against the `Server` from
-  `jest/setup-integration-tests.ts`; mongodb-memory-server (no local Mongo);
-  data persists across suites — use unique ids/emails; assert Mongo internals
-  do not leak (`expect(body._id).toBeUndefined()`).
+  `jest/setup-integration-tests.ts`; dynalite in-memory DynamoDB (no local
+  database); data persists across suites — use unique ids/emails; seed and
+  inspect data through the repositories so tests stay driver-agnostic.
 * Coverage is enforced on the merged unit+int report because each suite covers
   different layers; runtime bootstrap (`main.ts`, telemetry SDK) is excluded.
 
@@ -293,8 +292,8 @@ Bootstrap-phase I/O happens **inside** `start()`, never at module load.
 
 When generating or editing code, **always**:
 
-1. **Naming & files** — `I*` domain, `IM*` persistence (in the schema file),
-   `E*` enums, `M*` models; files lowercase-with-dots.
+1. **Naming & files** — `I*` domain, `IM*` persistence (in the table file),
+   `E*` enums; files lowercase-with-dots.
 2. **Architecture** — thin controllers (`next(error)`), business rules and
    typed domain errors in services, thin repositories, wiring only in factories.
 3. **Contract-first** — update `src/contracts/service.yaml` in the same change
@@ -317,12 +316,13 @@ When generating or editing code, **always**:
 
 ### 8.2 Service layer
 * Central hub for business rules; throws typed domain errors.
-* Handle race conditions via DB constraints (unique indexes) and translate DB
-  conflicts into domain errors.
+* Handle race conditions via DB constraints (condition expressions such as
+  `attribute_not_exists`) and translate DB conflicts into domain errors.
 
 ### 8.3 Repository layer
 * Thin CRUD wrappers; no domain logic, no try/catch re-wrapping.
-* Return plain domain objects (`.lean<IUser>()` + projection hiding `_id`/`__v`).
+* Return plain domain objects (map every item through `toUser` so storage
+  internals never leak).
 
 ### 8.4 Route naming
 * Resources in **kebab-case**, plural, no `/api` prefix: `/users`,

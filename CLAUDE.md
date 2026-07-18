@@ -7,7 +7,7 @@ precedence over any document** (including `Agents.md` — see "Known divergences
 
 A REST API boilerplate in Node.js 20 + TypeScript (strict, CommonJS) with Clean
 Architecture, contract-first design (OpenAPI validates requests **and** responses
-at runtime), MongoDB via Mongoose, and observability with OpenTelemetry plus
+at runtime), DynamoDB via the AWS SDK v3, and observability with OpenTelemetry plus
 structured logs (winston via the `traceability` lib) carrying the `trace_id` on
 every log line.
 
@@ -18,7 +18,7 @@ yarn dev            # ts-node-dev with --env-file=.env
 yarn build          # tsc + copies src/contracts/*.yaml to dist (copy-essentials)
 yarn start          # node dist/src/main.js
 yarn test:unit      # jest, only *.unit.test.ts
-yarn test:int       # jest --runInBand, only *.int.test.ts (mongodb-memory-server; no local Mongo needed)
+yarn test:int      # jest --runInBand, only *.int.test.ts (dynalite in-memory DynamoDB; no local database needed)
 yarn lint           # eslint
 yarn lint:fix       # eslint --fix
 yarn prettier       # prettier --write on src/
@@ -38,8 +38,8 @@ yarn prettier && yarn lint && yarn build && yarn test
 | `src/domain/errors/` | Domain errors (`DomainError`, `NotFoundError` 404, `ConflictError` 409) — mapped to HTTP by the central error handler in `server.ts` |
 | `src/domain/common/` | Cross-feature domain types (e.g. `IPagination`) |
 | `src/interfaces/http/` | `server.ts` (Express + middlewares) and `controllers/` (thin HTTP adapters) |
-| `src/infrastructure/repository/<feature>/` | Repository contract implementations (Mongoose) |
-| `src/infrastructure/db/mongo/{schema,models}/` | Mongoose schemas and models |
+| `src/infrastructure/repository/<feature>/` | Repository contract implementations (DynamoDB) |
+| `src/infrastructure/db/dynamo/` | DynamoDB client, `DynamoDatabase` lifecycle adapter and `tables/` (table definitions + item mappers) |
 | `src/infrastructure/config/` | `env.ts` (fail-fast env validation) and `factories/` (composition root — manual DI via static factories) |
 | `src/infrastructure/telemetry/` | OpenTelemetry (`tracing.ts`) and trace-context injection into the logger (`logger.ts`) |
 | `src/contracts/service.yaml` | OpenAPI 3.0.2 — source of truth for the API, validated at runtime |
@@ -57,22 +57,21 @@ constructor (an `IParams*` object); composition happens **only** in factories.
 3. `src/domain/<feature>/repository/<feature>.repository.read.ts` and `.write.ts` — contracts `I<Feature>RepositoryRead/Write`
 4. `src/domain/<feature>/<feature>.entity.ts` — class `<Feature> implements I<Feature>` with `readonly` properties
 5. `src/domain/<feature>/service/<feature>.service.ts` — `<Feature>Service implements I<Feature>Service`; business rules throw errors from `src/domain/errors/` (`NotFoundError`, `ConflictError`) — never decide HTTP status in the service
-6. `src/infrastructure/db/mongo/schema/<feature>.schema.ts` — `IM<Feature> extends I<Feature>` (adds `_id: Types.ObjectId`) and `export const <feature>Schema = new Schema<IM<Feature>>(...)`
-7. `src/infrastructure/db/mongo/models/<feature>.model.ts` — `export const M<feature> = mongoose.model<IM<Feature>>(...)` (e.g. `Muser`)
-8. `src/infrastructure/repository/<feature>/<feature>.repository.read.ts` and `.write.ts` — implementations (same file names as the contracts, different directories); use `.lean()` with `HIDE_MONGO_INTERNAL_FIELDS` so `_id`/`__v` never leak
-9. `src/interfaces/http/controllers/<feature>.controller.ts` — `<Feature>Controller implements IController`, receives `I<Feature>Service` (the interface, not the class); errors go to `next(error)` — the central error handler answers in the contract shape
-10. `src/infrastructure/config/factories/<feature>.service.factory.ts` and `<feature>.controller.factory.ts` — `static create()`
-11. Register the controller in **two places**: `src/main.ts` and `src/__tests__/configApp.ts`
-12. Update `src/contracts/service.yaml` with the new endpoints (request and response)
-13. Tests: `src/__tests__/unit/<feature>.*.unit.test.ts` and `src/__tests__/integration/<feature>.*.int.test.ts`
+6. `src/infrastructure/db/dynamo/tables/<feature>.table.ts` — `IM<Feature>` (domain interface with storage types: dates as ISO strings), `<FEATURE>_TABLE_NAME`, `<feature>TableDefinition` (register it in `DynamoDatabase` so the table is created on boot) and the `to<Feature>`/`to<Feature>Item` mappers
+7. `src/infrastructure/repository/<feature>/<feature>.repository.read.ts` and `.write.ts` — implementations (same file names as the contracts, different directories); always map items through `to<Feature>` so storage internals never leak
+8. `src/interfaces/http/controllers/<feature>.controller.ts` — `<Feature>Controller implements IController`, receives `I<Feature>Service` (the interface, not the class); errors go to `next(error)` — the central error handler answers in the contract shape
+9. `src/infrastructure/config/factories/<feature>.service.factory.ts` and `<feature>.controller.factory.ts` — `static create()`
+10. Register the controller in **two places**: `src/main.ts` and `src/__tests__/configApp.ts`
+11. Update `src/contracts/service.yaml` with the new endpoints (request and response)
+12. Tests: `src/__tests__/unit/<feature>.*.unit.test.ts` and `src/__tests__/integration/<feature>.*.int.test.ts`
 
 Details in [docs/architecture.md](docs/architecture.md).
 
 ## Critical conventions (summary)
 
 - Files: lowercase with dots — `user.service.ts`, `user.repository.read.ts`, `user.controller.factory.ts`, `controller.interface.ts`. No exceptions.
-- Interfaces prefixed with `I` (`IUser`, `IUserService`, `IController`); constructor/method parameter objects as `IParams*` (`IParamsCreateUser`, `IParamsUserService`); persistence interfaces as `IM*` (`IMUser extends IUser`, defined next to the schema).
-- Mongoose models prefixed with `M` and typed (`Muser = mongoose.model<IMUser>`); schemas in camelCase and typed (`userSchema = new Schema<IMUser>`).
+- Interfaces prefixed with `I` (`IUser`, `IUserService`, `IController`); constructor/method parameter objects as `IParams*` (`IParamsCreateUser`, `IParamsUserService`); persistence interfaces as `IM*` (`IMUser`, derived from the domain interface, defined next to the table definition).
+- Table definitions in camelCase (`userTableDefinition`); item mappers as `toUser`/`toUserItem`; table/index names as constants (`USER_TABLE_NAME`, `USER_EMAIL_INDEX_NAME`).
 - Constants in `UPPER_SNAKE_CASE` (`OPEN_API_SPEC_FILE_LOCATION`).
 - Tests: `describe('When we ...')` / `it('should ...')`.
 - Commits: Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`) — required by semantic-release and enforced by commitlint.
@@ -83,7 +82,7 @@ Details in [docs/architecture.md](docs/architecture.md).
 
 - **Never** use `console.log`. Always `import { Logger } from 'traceability'`.
 - Every log with structured metadata: `Logger.info('message', { eventName: 'user.created', ... })`. **Never** `JSON.stringify` inside the message.
-- The `import './infrastructure/telemetry/tracing'` **must be the first line** of `src/main.ts` — auto-instrumentation needs to load before express/mongoose.
+- The `import './infrastructure/telemetry/tracing'` **must be the first line** of `src/main.ts` — auto-instrumentation needs to load before express/aws-sdk.
 - Every log line emitted inside a request/span automatically gains `trace_id`, `span_id` and `trace_flags` (winston format in `src/infrastructure/telemetry/logger.ts`), in addition to the legacy `cid` from `traceability`.
 - Tests run with `OTEL_SDK_DISABLED=true` (set in `.env.test`).
 - Details and manual spans in [docs/observability.md](docs/observability.md).
@@ -97,6 +96,8 @@ Details in [docs/architecture.md](docs/architecture.md).
 - Commits go through commitlint (husky `commit-msg` hook): type required, lowercase subject, header ≤ 72 chars.
 - `release.config.js` calls `./setup/set-version.sh`, which does not exist in the repo (only runs in CI with `GITHUB_REF_NAME`).
 - Required environment variables are validated in `src/infrastructure/config/env.ts` (fail-fast at boot) — read env through it, not via scattered `process.env`.
+- DynamoDB has no native offset: `listUsers` scans pages and applies offset/limit client-side; heavy list endpoints should move to cursor (`ExclusiveStartKey`) pagination.
+- Lookups by non-key attributes need a GSI (e.g. `email-index` for `findUserByEmail`) — add the index to the table definition in the same change.
 
 ## Organization standards
 
@@ -129,5 +130,5 @@ metadata, and comments only when they explain the "why".
 
 - [docs/architecture.md](docs/architecture.md) — layers, request→response flow, DI
 - [docs/conventions.md](docs/conventions.md) — naming, errors, style, commits
-- [docs/testing.md](docs/testing.md) — Jest, integration with mongodb-memory-server
+- [docs/testing.md](docs/testing.md) — Jest, integration with dynalite (in-memory DynamoDB)
 - [docs/observability.md](docs/observability.md) — OpenTelemetry, logs, trace_id

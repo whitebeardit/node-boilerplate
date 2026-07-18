@@ -1,8 +1,8 @@
 import { bootstrapTest } from '../src/__tests__/testUtils';
 import { Server } from '../src/interfaces/http/server';
-import { MongooseDatabase } from './setup-db';
+import { IDatabase } from '../src/infrastructure/db/database.interface';
 
-let dbInstance: MongooseDatabase;
+let dbInstance: IDatabase;
 export let app: Server;
 
 beforeAll(async () => {

@@ -8,7 +8,7 @@ maintenance easier.
 
 - **src/domain** – Entities, domain errors and repository/service contracts.
 - **src/interfaces** – Input/output adapters (e.g. HTTP).
-- **src/infrastructure** – Concrete implementations (Mongo, factories, telemetry, env).
+- **src/infrastructure** – Concrete implementations (DynamoDB, factories, telemetry, env).
 - **src/contracts** – OpenAPI spec that documents and validates the API.
 - **src/\_\_tests\_\_** – Unit and integration tests.
 - **main.ts** – Entry point that wires telemetry and instantiates the server.
@@ -22,7 +22,7 @@ yarn install
 ```
 
 2. Create a `.env` file from the example (`cp .env.example .env`) and adjust
-   `DATABASE_URI`, `PORT` and the `OTEL_*` variables.
+   `AWS_REGION`, `DYNAMODB_ENDPOINT`, `PORT` and the `OTEL_*` variables.
 3. Start in development mode:
 
 ```bash

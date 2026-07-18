@@ -1,42 +1,42 @@
-import mongoose from 'mongoose';
+import { randomUUID } from 'crypto';
 import supertest from 'supertest';
 import { app } from '../../../jest/setup-integration-tests';
-import { Muser } from '../../infrastructure/db/mongo/models/user.model';
+import { UserRepositoryWrite } from '../../infrastructure/repository/user/user.repository.write';
 import { IUser } from '../../domain/user/interfaces/user.interface';
 
+const userRepositoryWrite = new UserRepositoryWrite();
 let existingUser: IUser;
 
 beforeEach(async () => {
   existingUser = {
-    id: new mongoose.Types.ObjectId().toHexString(),
-    email: `get-${Date.now()}@email.com`,
+    id: randomUUID(),
+    email: `get-${randomUUID()}@email.com`,
     name: 'Whitebeard',
     createdAt: new Date(),
   };
-  await Muser.create(existingUser);
+  await userRepositoryWrite.createUser(existingUser);
 });
 
 describe('When we get a user by ID', () => {
-  it('should return 200 with the user and no Mongo internal fields', async () => {
+  it('should return 200 with the user and no storage internal fields', async () => {
     const { body, statusCode } = await supertest(app.app).get(
       `/users/${existingUser.id}`,
     );
 
     expect(statusCode).toBe(200);
-    expect(body).toMatchObject({
+    expect(body).toEqual({
       id: existingUser.id,
       name: existingUser.name,
       email: existingUser.email,
+      createdAt: existingUser.createdAt.toISOString(),
     });
-    expect(body._id).toBeUndefined();
-    expect(body.__v).toBeUndefined();
   });
 });
 
 describe('When we get a user that does not exist', () => {
   it('should return 404 with the contract error shape', async () => {
     const { body, statusCode } = await supertest(app.app).get(
-      `/users/${new mongoose.Types.ObjectId().toHexString()}`,
+      `/users/${randomUUID()}`,
     );
 
     expect(statusCode).toBe(404);

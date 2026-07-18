@@ -1,19 +1,22 @@
-import mongoose from 'mongoose';
+import { randomUUID } from 'crypto';
 import supertest from 'supertest';
 import { app } from '../../../jest/setup-integration-tests';
-import { Muser } from '../../infrastructure/db/mongo/models/user.model';
+import { UserRepositoryRead } from '../../infrastructure/repository/user/user.repository.read';
+import { UserRepositoryWrite } from '../../infrastructure/repository/user/user.repository.write';
 import { IUser } from '../../domain/user/interfaces/user.interface';
 
+const userRepositoryRead = new UserRepositoryRead();
+const userRepositoryWrite = new UserRepositoryWrite();
 let existingUser: IUser;
 
 beforeEach(async () => {
   existingUser = {
-    id: new mongoose.Types.ObjectId().toHexString(),
-    email: `update-${Date.now()}@email.com`,
+    id: randomUUID(),
+    email: `update-${randomUUID()}@email.com`,
     name: 'Whitebeard',
     createdAt: new Date(),
   };
-  await Muser.create(existingUser);
+  await userRepositoryWrite.createUser(existingUser);
 });
 
 describe('When we update an existing user', () => {
@@ -25,9 +28,8 @@ describe('When we update an existing user', () => {
     expect(statusCode).toBe(200);
     expect(body.name).toBe('Edward Newgate');
     expect(body.email).toBe(existingUser.email);
-    expect(body._id).toBeUndefined();
 
-    const userInDb = await Muser.findOne({ id: existingUser.id });
+    const userInDb = await userRepositoryRead.findUserById(existingUser.id);
     expect(userInDb?.name).toBe('Edward Newgate');
   });
 });
@@ -35,7 +37,7 @@ describe('When we update an existing user', () => {
 describe('When we update a user that does not exist', () => {
   it('should return 404 with the contract error shape', async () => {
     const { body, statusCode } = await supertest(app.app)
-      .put(`/users/${new mongoose.Types.ObjectId().toHexString()}`)
+      .put(`/users/${randomUUID()}`)
       .send({ name: 'Nobody' });
 
     expect(statusCode).toBe(404);

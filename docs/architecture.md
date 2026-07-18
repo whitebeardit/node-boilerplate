@@ -12,7 +12,7 @@ graph TD
     C --> D[domain/user/service<br/>UserService]
     D --> E[domain/user/repository<br/>IUserRepositoryRead / IUserRepositoryWrite]
     E -.implemented by.-> F[infrastructure/repository/user<br/>UserRepositoryRead / UserRepositoryWrite]
-    F --> G[infrastructure/db/mongo<br/>userSchema / Muser]
+    F --> G[infrastructure/db/dynamo<br/>dynamoDocumentClient / user.table]
 ```
 
 **Dependency rule:** `domain/` is pure — it does not import `infrastructure/`
@@ -92,8 +92,14 @@ Initialization order in the `Server` constructor:
 In `main.ts`, the boot order is: telemetry (first-line import) → env validation
 (`infrastructure/config/env.ts`, fail-fast) → `new Server(...)` →
 `await databaseSetup()` → `listen()` → graceful-shutdown registration
-(SIGTERM/SIGINT close the HTTP server and Mongoose, exit 0 on success, with a
-failsafe timeout).
+(SIGTERM/SIGINT close the HTTP server and the DynamoDB client, exit 0 on
+success, with a failsafe timeout).
+
+The `Server` receives an `IDatabase` adapter
+(`src/infrastructure/db/database.interface.ts`) instead of a connection string:
+`DynamoDatabase` (`src/infrastructure/db/dynamo/dynamo.database.ts`) ensures
+the tables exist on `start()` (idempotent — in production they are usually
+provisioned by IaC) and destroys the client on `close()`.
 
 ## Domain errors (`src/domain/errors/`)
 
@@ -109,13 +115,15 @@ error responses.
 2. `OpenApiValidator` validates the request against `src/contracts/service.yaml` — an invalid body → 400 `ValidationError` before reaching the controller.
 3. `UserController.createUser` (arrow function property) extracts `{ id, name, email, createdAt }` from the body and calls `userService.createUser(...)`.
 4. `UserService.createUser` applies the business rule: email already in use → throws `ConflictError` (becomes 409 in the handler); otherwise builds the `User` entity and delegates to `userRepositoryWrite.createUser`.
-5. `UserRepositoryWrite` persists via the `Muser` model and returns a plain `IUser` (projection hides `_id`/`__v` — see `mongo.projection.ts`).
+5. `UserRepositoryWrite` persists via a `PutCommand` on the users table and returns a plain `IUser` (the `toUser` mapper in `user.table.ts` picks fields explicitly, so storage internals never leak).
 6. The controller responds `201` with the user; any error goes to `next(error)`.
 7. `OpenApiValidator` validates the **response** against the contract before sending it.
 
 `GET /users` is paginated: `limit`/`offset` query params (validated and coerced
 by the contract), forwarded by the controller to the service, which applies
-defaults (20/0) and passes an `IPagination` to the repository (`skip`/`limit`).
+defaults (20/0) and passes an `IPagination` to the repository. DynamoDB has no
+native offset, so the repository scans pages and applies the offset/limit
+window client-side.
 
 ## OpenAPI contract (`src/contracts/service.yaml`)
 

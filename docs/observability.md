@@ -13,12 +13,12 @@ logs with the **OTel `trace_id` on every log line** (log ↔ trace correlation).
 ### Initialization order (critical)
 
 ```ts
-// src/main.ts — FIRST line, before any express/mongoose import:
+// src/main.ts — FIRST line, before any express/aws-sdk import:
 import './infrastructure/telemetry/tracing';
 ```
 
 Auto-instrumentation works by patching modules at `require` time — if express or
-mongoose load first, there are no spans. Never move this import.
+the AWS SDK load first, there are no spans. Never move this import.
 
 ### Environment variables (see `.env.example`)
 
@@ -68,7 +68,7 @@ absent — the format is a no-op without a valid span.
 
 Auto-instrumentation (`@opentelemetry/auto-instrumentations-node`, with
 `instrumentation-fs` disabled) already creates spans for: HTTP server/client,
-Express routes (including middlewares) and Mongoose/MongoDB operations.
+Express routes (including middlewares) and AWS SDK/DynamoDB operations.
 
 For relevant business operations, create manual spans in the service:
 
@@ -109,7 +109,7 @@ automatically.
    ```bash
    docker run --rm -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one:latest
    ```
-2. `cp .env.example .env` (adjust `DATABASE_URI` if needed) and `yarn dev`.
+2. `cp .env.example .env` (adjust `AWS_REGION`/`DYNAMODB_ENDPOINT` if needed) and `yarn dev`.
 3. Make a request (`curl http://localhost:3000/users`) and check:
    - the JSON log on stdout contains `trace_id`/`span_id`;
    - the trace shows up at `http://localhost:16686` with the same `trace_id`.

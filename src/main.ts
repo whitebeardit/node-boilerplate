@@ -1,10 +1,11 @@
 // OpenTelemetry must be initialized before any instrumented module (express,
-// mongoose, http) is imported. Keep this import as the first line.
+// aws-sdk, http) is imported. Keep this import as the first line.
 import './infrastructure/telemetry/tracing';
 import path from 'path';
 import { Logger } from 'traceability';
 import { Server } from './interfaces/http/server';
 import { env } from './infrastructure/config/env';
+import { DynamoDatabase } from './infrastructure/db/dynamo/dynamo.database';
 
 import { UserControllerFactory } from './infrastructure/config/factories/user.controller.factory';
 
@@ -18,7 +19,7 @@ const SHUTDOWN_TIMEOUT_MILLISECONDS = 10000;
 const app = new Server({
   port: env.port,
   controllers: [UserControllerFactory.create()],
-  databaseURI: env.databaseUri,
+  database: new DynamoDatabase(),
   apiSpecLocation: OPEN_API_SPEC_FILE_LOCATION,
 });
 
