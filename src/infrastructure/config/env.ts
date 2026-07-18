@@ -17,4 +17,7 @@ export const env = {
   // Point to DynamoDB Local/dynalite in dev and tests; unset means real AWS.
   dynamodbEndpoint: process.env.DYNAMODB_ENDPOINT,
   usersTableName: process.env.DYNAMODB_USERS_TABLE || 'users',
+  sqsUserNewQueueUrl: requireEnv('SQS_USER_NEW_QUEUE_URL'),
+  // Point to a local SQS (elasticmq/localstack) in dev; unset means real AWS.
+  sqsEndpoint: process.env.SQS_ENDPOINT,
 };

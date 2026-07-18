@@ -27,7 +27,7 @@ implementation** of this standard — every stub below mirrors its real code.
 | ├─ Config | `src/infrastructure/config/` | `env.ts` (fail-fast env validation) |
 | ├─ Factories (composition root) | `src/infrastructure/config/factories/` | `<feature>.controller.factory.ts`, `<feature>.service.factory.ts` |
 | ├─ Telemetry | `src/infrastructure/telemetry/` | OpenTelemetry SDK bootstrap + trace-context log injection |
-| ├─ Messaging *(when needed)* | `src/infrastructure/messaging/<event>/` | Kafka/Rabbit producers & consumers |
+| ├─ Messaging | `src/infrastructure/messaging/<event>/` | SQS consumers & producers (`worker.interface.ts`, generic `SqsWorker` in `messaging/sqs/`) |
 | ├─ External services *(when needed)* | `src/infrastructure/external/services/` | HTTP/GRPC clients for third-party APIs |
 | **Contracts** | `src/contracts/service.yaml` | OpenAPI 3.0 spec — validated at runtime (requests **and** responses) |
 | **Tests** | `src/__tests__/{unit,integration}/` | Mandatory suffixes `.unit.test.ts` / `.int.test.ts` |
@@ -336,14 +336,24 @@ When generating or editing code, **always**:
 
 ---
 
-## 9  Messaging Producer Checklist (Kafka) *(when the project adds messaging)*
+## 9  Messaging Checklist (SQS)
 
-1. **Interface & implementation** — `I<Event>ProducerKafka` + class inside `src/infrastructure/messaging/<event>/`.
-2. **Service integration** — inject the producer interface via constructor.
-3. **Factory registration** — wire it in `src/infrastructure/config/factories/<feature>.service.factory.ts`.
-4. **Contract** — keep `src/contracts/asyncapi.yaml` updated with topics and schemas.
-5. **Service-layer calls** — call producers *after* successful repository operations.
-6. **Tests** — integration tests assert invocation via `jest.spyOn()`.
+### 9.1 Consumer
+
+1. **Handler** — `class <Event>Consumer implements ISqsMessageHandler` in `src/infrastructure/messaging/<event>/`, receiving the domain service **interface** via constructor. It is the messaging analog of a controller: parse/validate (payload parser throws `BadRequestError`), delegate, decide `'ack' | 'retry'` — business rules stay in the service.
+2. **Tracking context** — before the first log or service call, re-establish the context that came in the MessageAttributes: `ContextAsyncHooks.asyncLocalStorage.run({ cid }, ...)` (cid precedence: attribute > traceparent trace-id > generated) plus `propagation.extract` + a CONSUMER span, so every log carries `cid`/`trace_id` and downstream spans are children of the message trace.
+3. **Error policy** — non-retryable failures (invalid payload, duplicates) → warn + `'ack'`; anything else → error + `'retry'` (visibility timeout → redrive policy → DLQ, configured in infrastructure — never track receive counts in code).
+4. **Worker & factory** — reuse the generic `SqsWorker` (long poll, delete on ack, drain on stop); wire in `src/infrastructure/config/factories/messaging/<event>.worker.factory.ts` with `static create(): IWorker`; start after the HTTP server, stop **first** on shutdown.
+5. **Contract** — keep `src/contracts/asyncapi.yaml` updated (payload schema, tracking headers, operational notes).
+6. **Tests** — unit for handler/payload; integration with `aws-sdk-client-mock` on `SQSClient` and the real service/repository stack.
+
+### 9.2 Producer
+
+1. **Interface & implementation** — `I<Event>ProducerSqs` + class inside `src/infrastructure/messaging/<event>/`.
+2. **Context injection** — inject `traceparent`/`tracestate` (`propagation.inject`) and the current `cid` as MessageAttributes so consumers resume the same trace (cid must be present even with the OTel SDK disabled).
+3. **Service integration** — inject the producer interface via constructor; call it *after* successful repository operations.
+4. **Factory registration** — wire it in `src/infrastructure/config/factories/<feature>.service.factory.ts`.
+5. **Tests** — assert body serialization and tracking attributes with `aws-sdk-client-mock`.
 
 ---
 

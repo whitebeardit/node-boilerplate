@@ -1,0 +1,103 @@
+asyncapi: 3.0.0
+info:
+  title: Node Boilerplate Messaging
+  version: 1.0.0
+  description: >-
+    Asynchronous contract of the service. This service RECEIVES the USER.NEW
+    event from an SQS queue and creates the user in DynamoDB through the
+    domain service (same business rules as POST /users).
+
+
+    Operational contract:
+
+    - Non-retryable failures (malformed payload, duplicate user) are
+      acknowledged (deleted) with a structured warn log that preserves the
+      body — redelivery could never make them succeed.
+
+    - Any other failure leaves the message on the queue: the visibility
+      timeout expires and the queue's redrive policy (maxReceiveCount,
+      configured in infrastructure) eventually moves it to the DLQ. The
+      application never tracks receive counts itself.
+
+defaultContentType: application/json
+
+servers:
+  sqs:
+    host: sqs.us-east-1.amazonaws.com
+    protocol: sqs
+    description: >-
+      AWS SQS (queue URL provided via SQS_USER_NEW_QUEUE_URL; local
+      development can point SQS_ENDPOINT to elasticmq/localstack)
+
+channels:
+  userNew:
+    address: USER.NEW
+    description: Queue carrying user-creation events
+    messages:
+      userNew:
+        $ref: '#/components/messages/UserNew'
+
+operations:
+  receiveUserNew:
+    action: receive
+    channel:
+      $ref: '#/channels/userNew'
+    summary: Consume USER.NEW and persist the user
+    description: >-
+      Handled by UserNewConsumer -> IUserService.createUser -> DynamoDB. The
+      tracking context in the message headers is re-established before any
+      log or database call.
+    messages:
+      - $ref: '#/channels/userNew/messages/userNew'
+
+components:
+  messages:
+    UserNew:
+      name: USER.NEW
+      title: User created event
+      summary: A new user that must be persisted by this service
+      headers:
+        type: object
+        description: >-
+          Carried as SQS MessageAttributes (DataType String). traceparent is
+          injected/extracted by OpenTelemetry; cid is the legacy correlation
+          id used by the structured logger. Precedence on the consumer side:
+          cid attribute > traceparent trace-id > generated.
+        properties:
+          traceparent:
+            type: string
+            description: W3C Trace Context traceparent
+            examples:
+              - '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'
+          tracestate:
+            type: string
+            description: W3C Trace Context tracestate
+          cid:
+            type: string
+            description: Legacy correlation id (32 lowercase hex chars)
+            examples:
+              - '0af7651916cd43dd8448eb211c80319c'
+      payload:
+        type: object
+        required:
+          - id
+          - name
+          - email
+        additionalProperties: false
+        properties:
+          id:
+            type: string
+            description: The unique identifier of the user
+          name:
+            type: string
+            description: The user's name
+          email:
+            type: string
+            format: email
+            description: The user's email address
+          createdAt:
+            type: string
+            format: date-time
+            description: >-
+              When the user was created; defaults to the processing time when
+              absent

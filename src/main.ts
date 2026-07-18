@@ -8,6 +8,7 @@ import { env } from './infrastructure/config/env';
 import { DynamoDatabase } from './infrastructure/db/dynamo/dynamo.database';
 
 import { UserControllerFactory } from './infrastructure/config/factories/user.controller.factory';
+import { UserNewWorkerFactory } from './infrastructure/config/factories/messaging/user.new.worker.factory';
 
 const OPEN_API_SPEC_FILE_LOCATION = path.resolve(
   __dirname,
@@ -26,15 +27,21 @@ const app = new Server({
 async function start() {
   await app.databaseSetup();
   const httpServer = app.listen();
+  const userNewWorker = UserNewWorkerFactory.create();
+  userNewWorker.start();
 
   const shutdown = (signal: string) => {
     Logger.info(`Received ${signal}, shutting down gracefully`, {
       eventName: 'app.shutdown',
       process: 'Application',
     });
-    httpServer.close(async () => {
-      await app.closeDatabase();
-      process.exit(0);
+    // Stop pulling messages and drain the in-flight batch before closing the
+    // HTTP server and the database.
+    void userNewWorker.stop().then(() => {
+      httpServer.close(async () => {
+        await app.closeDatabase();
+        process.exit(0);
+      });
     });
     // Failsafe: force exit if connections refuse to drain
     setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MILLISECONDS).unref();

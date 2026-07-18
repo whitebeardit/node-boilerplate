@@ -77,6 +77,22 @@ Watch out for:
   (`UserRepositoryWrite`/`UserRepositoryRead`), never through the AWS SDK
   directly — the tests stay driver-agnostic.
 
+## SQS tests (transport mocked, stack real)
+
+SQS is mocked at the client boundary with `aws-sdk-client-mock`
+(`mockClient(SQSClient)`) — the same level dynalite mocks DynamoDB. The worker
+integration test (`user.new.worker.int.test.ts`) runs the **real**
+`UserNewWorkerFactory` wiring (consumer → service → repositories → dynalite)
+and only fakes the queue: `resolvesOnce({ Messages: [...] })` for the batches
+under test. Two rules keep these tests stable:
+
+- The default receive behavior must be a **throttled** empty poll
+  (`callsFake` resolving `{ Messages: [] }` after ~25ms) — an instantly
+  resolving mock lets the poll loop free-run (in production the 20s long poll
+  paces it).
+- Wait for an observable effect (`sqsMock.commandCalls(DeleteMessageCommand)`)
+  before calling `worker.stop()` — never sleep for fixed durations.
+
 ## Unit tests
 
 - Mock every external dependency (repositories, producers) — services receive

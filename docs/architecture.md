@@ -129,6 +129,31 @@ fills the page (paging past filtered-out items) and returns
 last returned item's key encoded as an opaque base64url token
 (`dynamo.cursor.ts`). A malformed cursor throws `BadRequestError` (400).
 
+## Message flow (SQS `USER.NEW`)
+
+```mermaid
+graph TD
+    Q[SQS queue<br/>USER.NEW] --> W[messaging/sqs<br/>SqsWorker - long poll]
+    W --> H[messaging/user-new<br/>UserNewConsumer]
+    H --> S[domain/user/service<br/>UserService.createUser]
+    S --> R[infrastructure/repository/user<br/>UserRepositoryWrite]
+    R --> D[(DynamoDB users table)]
+```
+
+1. `SqsWorker` (generic long-poller, `src/infrastructure/messaging/sqs/sqs.worker.ts`) receives up to 10 messages per poll requesting the tracking MessageAttributes (`traceparent`, `tracestate`, `cid`).
+2. `UserNewConsumer` re-establishes the tracking context **before anything else**: `ContextAsyncHooks.asyncLocalStorage.run({ cid }, ...)` plus `propagation.extract` + a CONSUMER span — every log down the chain carries `cid`/`trace_id` and the DynamoDB spans are children of the message trace.
+3. The payload is validated (`parseUserNewPayload` → `BadRequestError` on invalid input) and delegated to `UserService.createUser` — the **same business rules** as `POST /users` (email conflict → `ConflictError`).
+4. The consumer returns a delivery decision; the worker owns the queue semantics:
+
+| Outcome | Decision | Queue effect |
+| --- | --- | --- |
+| Created | `ack` | `DeleteMessageCommand` |
+| Invalid payload (`BadRequestError`) | `ack` + warn | Deleted — redelivery can never fix it |
+| Duplicate (`ConflictError` / `ConditionalCheckFailedException`) | `ack` + warn | Deleted — idempotent replay |
+| Unknown error | `retry` + error | Left on queue → visibility timeout → redrive policy → DLQ |
+
+The redrive policy (`maxReceiveCount` → DLQ) is infrastructure configuration; the application never tracks receive counts. Boot order is telemetry → env → database → HTTP → worker; shutdown stops the worker **first** (drains the in-flight batch), then closes the HTTP server and the database. The message contract lives in `src/contracts/asyncapi.yaml`.
+
 ## OpenAPI contract (`src/contracts/service.yaml`)
 
 - Source of truth for the API; validated at runtime in both directions.
@@ -141,5 +166,5 @@ last returned item's key encoded as an opaque base64url token
 
 | File | Role |
 | --- | --- |
-| `src/main.ts` | Production/dev: telemetry + `Server` + controllers via factories |
+| `src/main.ts` | Production/dev: telemetry + `Server` + controllers via factories + `UserNewWorkerFactory` (SQS worker) |
 | `src/__tests__/configApp.ts` | `Server` instance used by integration tests — **must register the same controllers** |

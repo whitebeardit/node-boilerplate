@@ -95,6 +95,29 @@ async createUser(params: IParamsCreateUser): Promise<IUser> {
 Every `Logger.*` call inside `startActiveSpan` inherits the `trace_id`/`span_id`
 automatically.
 
+## Context propagation from SQS messages
+
+HTTP requests get their context from headers (Express middleware); SQS messages
+carry it in **MessageAttributes**: `traceparent`/`tracestate` (W3C, injected
+automatically by the aws-sdk instrumentation on `sendMessage` and explicitly by
+`UserNewProducerSqs`) and `cid` (the legacy correlation id).
+
+On the consumer side (`UserNewConsumer`), before anything else:
+
+1. `ContextAsyncHooks.getTrackId(attributes)` resolves the cid — precedence:
+   explicit `cid` attribute > `traceparent` trace-id segment > newly generated.
+2. `ContextAsyncHooks.asyncLocalStorage.run({ cid }, ...)` establishes the cid
+   scope for the whole processing.
+3. `propagation.extract` + `tracer.startActiveSpan(kind: CONSUMER)` resume the
+   OTel trace, so the DynamoDB spans emitted while persisting become children
+   of the message trace.
+
+Net effect: every log line from consumer → service → repository → SDK call
+carries the same `cid` and `trace_id` that came in the message — the track id
+travels from the producer all the way to the database operation. With
+`OTEL_SDK_DISABLED=true` the OTel steps are no-ops but cid propagation keeps
+working.
+
 ## Tests
 
 - `.env.test` sets `OTEL_SDK_DISABLED=true` — no exporter/spans in tests.

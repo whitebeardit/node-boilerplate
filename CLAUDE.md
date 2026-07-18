@@ -7,7 +7,8 @@ precedence over any document** (including `Agents.md` — see "Known divergences
 
 A REST API boilerplate in Node.js 20 + TypeScript (strict, CommonJS) with Clean
 Architecture, contract-first design (OpenAPI validates requests **and** responses
-at runtime), DynamoDB via the AWS SDK v3, and observability with OpenTelemetry plus
+at runtime), DynamoDB via the AWS SDK v3, an SQS consumer for the `USER.NEW`
+event (asyncapi.yaml contract), and observability with OpenTelemetry plus
 structured logs (winston via the `traceability` lib) carrying the `trace_id` on
 every log line.
 
@@ -40,9 +41,11 @@ yarn prettier && yarn lint && yarn build && yarn test
 | `src/interfaces/http/` | `server.ts` (Express + middlewares) and `controllers/` (thin HTTP adapters) |
 | `src/infrastructure/repository/<feature>/` | Repository contract implementations (DynamoDB) |
 | `src/infrastructure/db/dynamo/` | DynamoDB client, `DynamoDatabase` lifecycle adapter and `tables/` (table definitions + item mappers) |
+| `src/infrastructure/messaging/` | `worker.interface.ts` (`IWorker`, `ISqsMessageHandler`), `sqs/` (client + generic `SqsWorker` long-poller) and `user-new/` (payload parser, `UserNewConsumer`, `UserNewProducerSqs`) |
 | `src/infrastructure/config/` | `env.ts` (fail-fast env validation) and `factories/` (composition root — manual DI via static factories) |
 | `src/infrastructure/telemetry/` | OpenTelemetry (`tracing.ts`) and trace-context injection into the logger (`logger.ts`) |
 | `src/contracts/service.yaml` | OpenAPI 3.0.2 — source of truth for the API, validated at runtime |
+| `src/contracts/asyncapi.yaml` | AsyncAPI 3.0 — contract of the SQS messages (USER.NEW payload, tracking attributes, ack/DLQ policy) |
 | `src/__tests__/{unit,integration}/` | Tests (mandatory suffixes `.unit.test.ts` / `.int.test.ts`) |
 | `src/main.ts` | Entry point: imports telemetry (first line), instantiates `Server` with factories, graceful shutdown |
 
@@ -66,6 +69,15 @@ constructor (an `IParams*` object); composition happens **only** in factories.
 12. Tests: `src/__tests__/unit/<feature>.*.unit.test.ts` and `src/__tests__/integration/<feature>.*.int.test.ts`
 
 Details in [docs/architecture.md](docs/architecture.md).
+
+## Adding a message consumer (mirror the `user-new` slice)
+
+1. `src/infrastructure/messaging/<event>/<event>.payload.ts` — payload interface + `parse<Event>Payload` (throws `BadRequestError` on invalid input)
+2. `src/infrastructure/messaging/<event>/<event>.consumer.ts` — `implements ISqsMessageHandler`, receives the domain service **interface**; re-establishes tracking (cid via `ContextAsyncHooks.asyncLocalStorage.run`, OTel via `propagation.extract` + CONSUMER span) before touching the service; returns `'ack'` for non-retryable failures (invalid payload, duplicates) and `'retry'` for everything else
+3. `src/infrastructure/config/factories/messaging/<event>.worker.factory.ts` — `static create(): IWorker` wiring `sqsClient` + service factory + `SqsWorker`
+4. Start the worker in `src/main.ts` after `listen()`; stop it **first** in the shutdown handler
+5. Update `src/contracts/asyncapi.yaml` (payload + headers + operational notes)
+6. Tests: unit for consumer/payload; integration with `aws-sdk-client-mock` on `SQSClient` + real service/repositories/dynalite
 
 ## Critical conventions (summary)
 
@@ -98,6 +110,8 @@ Details in [docs/architecture.md](docs/architecture.md).
 - Required environment variables are validated in `src/infrastructure/config/env.ts` (fail-fast at boot) — read env through it, not via scattered `process.env`.
 - List endpoints use cursor pagination (`limit` + opaque `cursor`, response `{ items, nextCursor }`): the cursor is the DynamoDB `ExclusiveStartKey` base64url-encoded in `dynamo.cursor.ts`; a malformed cursor throws `BadRequestError` (400).
 - Lookups by non-key attributes need a GSI (e.g. `email-index` for `findUserByEmail`) — add the index to the table definition in the same change.
+- SQS consumers must **never ack an unknown error** — only non-retryable failures (invalid payload, duplicates) are deleted; everything else stays on the queue for the redrive policy → DLQ (configured in infrastructure, not in code).
+- Message handlers must wrap the whole processing in the tracking context (cid ALS + extracted OTel context) **before** the first log or service call, otherwise the trace/cid from the message is lost.
 
 ## Organization standards
 
