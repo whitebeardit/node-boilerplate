@@ -29,7 +29,25 @@ paths:
         - Users
       summary: Get all users
       operationId: getUsers
-      description: Retrieve a list of all users.
+      description: Retrieve a paginated list of users.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Maximum number of users to return
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of users to skip
       responses:
         '200':
           description: A list of users
@@ -70,6 +88,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationError'
+        '409':
+          description: A user with this email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: Server error
           content:
@@ -200,6 +224,7 @@ components:
           description: The user's name
         email:
           type: string
+          format: email
           description: The user's email address
         createdAt:
           type: string
@@ -220,6 +245,7 @@ components:
           description: The user's name
         email:
           type: string
+          format: email
           description: The user's email address
         createdAt:
           type: string
@@ -233,6 +259,7 @@ components:
           description: The user's name
         email:
           type: string
+          format: email
           description: The user's email address
     Error:
       type: object

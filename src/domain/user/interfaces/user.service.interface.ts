@@ -1,3 +1,4 @@
+import { IPagination } from '../../common/pagination.interface';
 import { IUserRepositoryRead } from '../repository/user.repository.read';
 import { IUserRepositoryWrite } from '../repository/user.repository.write';
 import { IUser } from './user.interface';
@@ -11,7 +12,7 @@ export interface IParamsCreateUser {
 
 export interface IParamsUpdateUser {
   id: string;
-  userData: Partial<IUser>;
+  userData: Partial<Pick<IUser, 'name' | 'email'>>;
 }
 
 export interface IParamsUserService {
@@ -21,9 +22,12 @@ export interface IParamsUserService {
 
 export interface IUserService {
   createUser(params: IParamsCreateUser): Promise<IUser>;
-  getUserById(id: string): Promise<IUser | null>;
-  getUserByEmail(email: string): Promise<IUser | null>;
-  updateUserById(id: string, params: IParamsUpdateUser): Promise<IUser | null>;
-  deleteUserById(id: string): Promise<IUser | null>;
-  listUsers(filter: Partial<IUser>): Promise<IUser[]>;
+  getUserById(id: string): Promise<IUser>;
+  getUserByEmail(email: string): Promise<IUser>;
+  updateUserById(params: IParamsUpdateUser): Promise<IUser>;
+  deleteUserById(id: string): Promise<IUser>;
+  listUsers(
+    filter: Partial<IUser>,
+    pagination?: Partial<IPagination>,
+  ): Promise<IUser[]>;
 }

@@ -1,12 +1,12 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { IController } from './IController';
-import { UserService } from '../../../domain/user/service/user.service';
+import { IUserService } from '../../../domain/user/interfaces/user.service.interface';
 
 export class UserController implements IController {
   router: Router;
-  private readonly userService: UserService;
+  private readonly userService: IUserService;
 
-  constructor(userService: UserService) {
+  constructor(userService: IUserService) {
     this.userService = userService;
     this.router = Router();
     this.initRoutes();
@@ -21,14 +21,22 @@ export class UserController implements IController {
   }
 
   /**
-   * Fetch all users
+   * Fetch users with pagination (limit/offset coerced by the OpenAPI validator)
    */
-  getUsers = async (req: Request, res: Response): Promise<void> => {
+  getUsers = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    const { limit, offset } = req.query as {
+      limit?: number;
+      offset?: number;
+    };
     try {
-      const users = await this.userService.listUsers();
+      const users = await this.userService.listUsers({}, { limit, offset });
       res.status(200).json(users);
     } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+      next(error);
     }
   };
 
@@ -38,24 +46,24 @@ export class UserController implements IController {
   getUserById = async (
     req: Request<{ id: string }>,
     res: Response,
+    next: NextFunction,
   ): Promise<void> => {
-    const { id } = req.params;
     try {
-      const user = await this.userService.getUserById(id);
-      if (!user) {
-        res.status(404).json({ message: 'User not found' });
-        return;
-      }
+      const user = await this.userService.getUserById(req.params.id);
       res.status(200).json(user);
     } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+      next(error);
     }
   };
 
   /**
    * Create a new user
    */
-  createUser = async (req: Request, res: Response): Promise<void> => {
+  createUser = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
     const { id, name, email, createdAt } = req.body;
     try {
       const newUser = await this.userService.createUser({
@@ -66,7 +74,7 @@ export class UserController implements IController {
       });
       res.status(201).json(newUser);
     } catch (error) {
-      res.status(400).json({ error: (error as Error).message });
+      next(error);
     }
   };
 
@@ -76,18 +84,17 @@ export class UserController implements IController {
   updateUser = async (
     req: Request<{ id: string }>,
     res: Response,
+    next: NextFunction,
   ): Promise<void> => {
-    const { id } = req.params;
-    const updateData = req.body;
+    const { name, email } = req.body;
     try {
-      const updatedUser = await this.userService.updateUserById(id, updateData);
-      if (!updatedUser) {
-        res.status(404).json({ message: 'User not found' });
-        return;
-      }
+      const updatedUser = await this.userService.updateUserById({
+        id: req.params.id,
+        userData: { name, email },
+      });
       res.status(200).json(updatedUser);
     } catch (error) {
-      res.status(400).json({ error: (error as Error).message });
+      next(error);
     }
   };
 
@@ -97,17 +104,13 @@ export class UserController implements IController {
   deleteUser = async (
     req: Request<{ id: string }>,
     res: Response,
+    next: NextFunction,
   ): Promise<void> => {
-    const { id } = req.params;
     try {
-      const deletedUser = await this.userService.deleteUserById(id);
-      if (!deletedUser) {
-        res.status(404).json({ message: 'User not found' });
-        return;
-      }
+      await this.userService.deleteUserById(req.params.id);
       res.status(200).json({ message: 'User deleted successfully' });
     } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+      next(error);
     }
   };
 

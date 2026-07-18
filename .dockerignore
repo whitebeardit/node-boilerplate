@@ -1,4 +1,9 @@
 node_modules
+dist
+coverage
+.git
+.env
+.env.test
 .terraform
 terraform-fargate-deploy
 containers_definitions.json

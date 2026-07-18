@@ -1,12 +1,10 @@
-export class User {
-  id: string;
-  name: string;
-  email: string;
-  createdAt: Date;
-  constructor(id: string, name: string, email: string, createdAt: Date) {
-    this.id = id;
-    this.name = name;
-    this.email = email;
-    this.createdAt = createdAt;
-  }
+import { IUser } from './interfaces/user.interface';
+
+export class User implements IUser {
+  constructor(
+    public readonly id: string,
+    public readonly name: string,
+    public readonly email: string,
+    public readonly createdAt: Date,
+  ) {}
 }

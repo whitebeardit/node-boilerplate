@@ -1,45 +1,41 @@
+import { IPagination } from '../../../domain/common/pagination.interface';
 import { IUser } from '../../../domain/user/interfaces/user.interface';
+import { IUserRepositoryRead } from '../../../domain/user/repository/user.repository.read';
 import { Muser } from '../../db/mongo/models/user.model';
+import { HIDE_MONGO_INTERNAL_FIELDS } from '../../db/mongo/mongo.projection';
 
-export class UserRepositoryRead {
+export class UserRepositoryRead implements IUserRepositoryRead {
   /**
    * Find a user by ID
    * @param id - The user's ID
-   * @returns The user document or null if not found
+   * @returns The user or null if not found
    */
   async findUserById(id: string): Promise<IUser | null> {
-    try {
-      return await Muser.findOne({ id });
-    } catch (error) {
-      throw new Error(`Error finding user by ID: ${(error as Error).message}`);
-    }
+    return Muser.findOne({ id }, HIDE_MONGO_INTERNAL_FIELDS).lean<IUser>();
   }
 
   /**
    * Find a user by email
    * @param email - The user's email
-   * @returns The user document or null if not found
+   * @returns The user or null if not found
    */
   async findUserByEmail(email: string): Promise<IUser | null> {
-    try {
-      return await Muser.findOne({ email });
-    } catch (error) {
-      throw new Error(
-        `Error finding user by email: ${(error as Error).message}`,
-      );
-    }
+    return Muser.findOne({ email }, HIDE_MONGO_INTERNAL_FIELDS).lean<IUser>();
   }
 
   /**
-   * List all users
+   * List users with pagination
    * @param filter - Optional filters for the query
-   * @returns An array of user documents
+   * @param pagination - Limit/offset applied to the query
+   * @returns An array of users
    */
-  async listUsers(filter: Partial<IUser>): Promise<IUser[]> {
-    try {
-      return await Muser.find(filter);
-    } catch (error) {
-      throw new Error(`Error listing users: ${(error as Error).message}`);
-    }
+  async listUsers(
+    filter: Partial<IUser>,
+    pagination: IPagination,
+  ): Promise<IUser[]> {
+    return Muser.find(filter, HIDE_MONGO_INTERNAL_FIELDS)
+      .skip(pagination.offset)
+      .limit(pagination.limit)
+      .lean<IUser[]>();
   }
 }
