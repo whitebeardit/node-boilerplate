@@ -3,9 +3,10 @@ info:
   title: Node Boilerplate Messaging
   version: 1.0.0
   description: >-
-    Asynchronous contract of the service. This service RECEIVES the USER.NEW
-    event from an SQS queue and creates the user in DynamoDB through the
-    domain service (same business rules as POST /users).
+    Asynchronous contract of the service. This service SENDS the USER.NEW
+    event when POST /users accepts a creation (async write path) and
+    RECEIVES it from the SQS queue to create the user in DynamoDB through
+    the domain service. Duplicate emails are resolved at consume time.
 
 
     Operational contract:
@@ -38,6 +39,18 @@ channels:
         $ref: '#/components/messages/UserNew'
 
 operations:
+  sendUserNew:
+    action: send
+    channel:
+      $ref: '#/channels/userNew'
+    summary: Publish USER.NEW from POST /users
+    description: >-
+      UserService.enqueueUserCreation -> UserNewProducerSqs. The HTTP
+      request's cid and trace context are injected as MessageAttributes, so
+      the consumer resumes the same trace and the cid ends up stored on the
+      DynamoDB item.
+    messages:
+      - $ref: '#/channels/userNew/messages/userNew'
   receiveUserNew:
     action: receive
     channel:

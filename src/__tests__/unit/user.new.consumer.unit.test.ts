@@ -23,6 +23,7 @@ let consumer: UserNewConsumer;
 beforeEach(() => {
   userService = {
     createUser: jest.fn(),
+    enqueueUserCreation: jest.fn(),
     getUserById: jest.fn(),
     getUserByEmail: jest.fn(),
     updateUserById: jest.fn(),

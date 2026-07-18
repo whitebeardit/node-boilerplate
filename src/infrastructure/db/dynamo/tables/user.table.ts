@@ -4,15 +4,18 @@ import { env } from '../../../config/env';
 
 /**
  * Persistence shape of the user item: the domain interface with the types
- * DynamoDB can store (dates become ISO-8601 strings). Lives next to the table
- * definition so repositories share a single mapping.
+ * DynamoDB can store (dates become ISO-8601 strings) plus the correlation id
+ * of the request that created it. Lives next to the table definition so
+ * repositories share a single mapping.
  */
 export interface IMUser extends Omit<IUser, 'createdAt'> {
   createdAt: string;
+  cid?: string;
 }
 
 export const USER_TABLE_NAME = env.usersTableName;
 export const USER_EMAIL_INDEX_NAME = 'email-index';
+export const USER_CID_INDEX_NAME = 'cid-index';
 
 export const userTableDefinition: CreateTableCommandInput = {
   TableName: USER_TABLE_NAME,
@@ -20,12 +23,19 @@ export const userTableDefinition: CreateTableCommandInput = {
   AttributeDefinitions: [
     { AttributeName: 'id', AttributeType: 'S' },
     { AttributeName: 'email', AttributeType: 'S' },
+    { AttributeName: 'cid', AttributeType: 'S' },
   ],
   KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
   GlobalSecondaryIndexes: [
     {
       IndexName: USER_EMAIL_INDEX_NAME,
       KeySchema: [{ AttributeName: 'email', KeyType: 'HASH' }],
+      Projection: { ProjectionType: 'ALL' },
+    },
+    // Sparse index: only items written inside a tracking context carry cid.
+    {
+      IndexName: USER_CID_INDEX_NAME,
+      KeySchema: [{ AttributeName: 'cid', KeyType: 'HASH' }],
       Projection: { ProjectionType: 'ALL' },
     },
   ],

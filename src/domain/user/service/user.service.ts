@@ -1,5 +1,6 @@
 import { IUserRepositoryRead } from '../repository/user.repository.read';
 import { IUserRepositoryWrite } from '../repository/user.repository.write';
+import { IUserNewProducer } from '../messaging/user.new.producer';
 import { IUser } from '../interfaces/user.interface';
 import {
   IParamsCreateUser,
@@ -20,10 +21,32 @@ const DEFAULT_LIST_LIMIT = 20;
 export class UserService implements IUserService {
   private userRepositoryRead: IUserRepositoryRead;
   private userRepositoryWrite: IUserRepositoryWrite;
+  private userNewProducer: IUserNewProducer;
 
-  constructor({ userRepositoryRead, userRepositoryWrite }: IParamsUserService) {
+  constructor({
+    userRepositoryRead,
+    userRepositoryWrite,
+    userNewProducer,
+  }: IParamsUserService) {
     this.userRepositoryRead = userRepositoryRead;
     this.userRepositoryWrite = userRepositoryWrite;
+    this.userNewProducer = userNewProducer;
+  }
+
+  /**
+   * Enqueue a user creation: publishes USER.NEW and returns once the message
+   * is on the queue. Persistence (and the email-uniqueness rule) happens
+   * asynchronously when the consumer processes the message.
+   * @param params - The user data to enqueue
+   */
+  async enqueueUserCreation(params: IParamsCreateUser): Promise<void> {
+    const user = new User(
+      params.id,
+      params.name,
+      params.email,
+      params.createdAt,
+    );
+    await this.userNewProducer.publishUserNew(user);
   }
 
   /**

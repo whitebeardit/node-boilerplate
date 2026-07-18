@@ -1,6 +1,8 @@
 import { UserService } from '../../domain/user/service/user.service';
 import { IUserRepositoryRead } from '../../domain/user/repository/user.repository.read';
 import { IUserRepositoryWrite } from '../../domain/user/repository/user.repository.write';
+import { IUserNewProducer } from '../../domain/user/messaging/user.new.producer';
+import { User } from '../../domain/user/user.entity';
 import { IUser } from '../../domain/user/interfaces/user.interface';
 import { ConflictError } from '../../domain/errors/conflict.error';
 import { NotFoundError } from '../../domain/errors/not-found.error';
@@ -14,6 +16,7 @@ const A_USER: IUser = {
 
 let userRepositoryRead: jest.Mocked<IUserRepositoryRead>;
 let userRepositoryWrite: jest.Mocked<IUserRepositoryWrite>;
+let userNewProducer: jest.Mocked<IUserNewProducer>;
 let userService: UserService;
 
 beforeEach(() => {
@@ -21,13 +24,34 @@ beforeEach(() => {
     findUserById: jest.fn(),
     findUserByEmail: jest.fn(),
     listUsers: jest.fn(),
+    listUsersByCid: jest.fn(),
   };
   userRepositoryWrite = {
     createUser: jest.fn(),
     updateUserById: jest.fn(),
     deleteUserById: jest.fn(),
   };
-  userService = new UserService({ userRepositoryRead, userRepositoryWrite });
+  userNewProducer = {
+    publishUserNew: jest.fn(),
+  };
+  userService = new UserService({
+    userRepositoryRead,
+    userRepositoryWrite,
+    userNewProducer,
+  });
+});
+
+describe('When we enqueue a user creation', () => {
+  it('should publish the built user entity as USER.NEW', async () => {
+    userNewProducer.publishUserNew.mockResolvedValue(undefined);
+
+    await userService.enqueueUserCreation(A_USER);
+
+    expect(userNewProducer.publishUserNew).toHaveBeenCalledWith(
+      new User(A_USER.id, A_USER.name, A_USER.email, A_USER.createdAt),
+    );
+    expect(userRepositoryWrite.createUser).not.toHaveBeenCalled();
+  });
 });
 
 describe('When we create a user', () => {

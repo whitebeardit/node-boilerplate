@@ -129,6 +129,31 @@ fills the page (paging past filtered-out items) and returns
 last returned item's key encoded as an opaque base64url token
 (`dynamo.cursor.ts`). A malformed cursor throws `BadRequestError` (400).
 
+## Asynchronous write path (`POST /users` → SQS → DynamoDB)
+
+`POST /users` does not persist: it validates the payload against the contract,
+publishes `USER.NEW` (via the domain port `IUserNewProducer`, implemented by
+`UserNewProducerSqs`) and answers `202 { message, cid }` once the message is
+on the queue. The consumer completes the write with the same business rules.
+The cid returned to the caller is the one stamped on the message and, later,
+on the DynamoDB item — `GET /ops/users?cid=` closes the loop.
+
+```mermaid
+graph LR
+    C[Client] -->|POST /users| A[UserController]
+    A -->|enqueueUserCreation| S[UserService]
+    S -->|publishUserNew + cid/traceparent| Q[(SQS USER.NEW)]
+    A -->|202 message + cid| C
+    Q --> W[SqsWorker]
+    W --> H[UserNewConsumer]
+    H -->|createUser| S2[UserService]
+    S2 --> R[UserRepositoryWrite]
+    R -->|item + cid| D[(DynamoDB users)]
+```
+
+Duplicate emails no longer surface as HTTP 409: the consumer drops the
+duplicate with a warn log (idempotent replay). Callers track outcomes by cid.
+
 ## Message flow (SQS `USER.NEW`)
 
 ```mermaid
@@ -152,7 +177,7 @@ graph TD
 | Duplicate (`ConflictError` / `ConditionalCheckFailedException`) | `ack` + warn | Deleted — idempotent replay |
 | Unknown error | `retry` + error | Left on queue → visibility timeout → redrive policy → DLQ |
 
-The redrive policy (`maxReceiveCount` → DLQ) is infrastructure configuration; the application never tracks receive counts. Boot order is telemetry → env → database → HTTP → worker; shutdown stops the worker **first** (drains the in-flight batch), then closes the HTTP server and the database. The message contract lives in `src/contracts/asyncapi.yaml`.
+The redrive policy (`maxReceiveCount` → DLQ) is infrastructure configuration; the application never tracks receive counts. `POST /ops/user-new/redrive` starts a native SQS move task (`StartMessageMoveTask`) sending the DLQ messages back to the source queue — domain port `IDlqRedriver`, implementation `SqsDlqRedriver`, orchestrated by `OpsService` (`src/domain/ops/`). Boot order is telemetry → env → database → HTTP → worker; shutdown stops the worker **first** (drains the in-flight batch), then closes the HTTP server and the database. The message contract lives in `src/contracts/asyncapi.yaml`.
 
 ## OpenAPI contract (`src/contracts/service.yaml`)
 
@@ -168,3 +193,5 @@ The redrive policy (`maxReceiveCount` → DLQ) is infrastructure configuration; 
 | --- | --- |
 | `src/main.ts` | Production/dev: telemetry + `Server` + controllers via factories + `UserNewWorkerFactory` (SQS worker) |
 | `src/__tests__/configApp.ts` | `Server` instance used by integration tests — **must register the same controllers** |
+
+Controllers registered today: `UserController` and `OpsController` (DLQ redrive + search by correlation id).

@@ -20,6 +20,7 @@ servers:
 
 tags:
   - name: Users
+  - name: Ops
     description: User management operations
 
 paths:
@@ -70,9 +71,14 @@ paths:
     post:
       tags:
         - Users
-      summary: Create a new user
+      summary: Accept a user creation (asynchronous)
       operationId: createUser
-      description: Add a new user to the database.
+      description: >-
+        Publishes a USER.NEW message carrying the request's correlation id
+        (cid) and trace context; the consumer persists the user
+        asynchronously. Duplicate emails are resolved at consume time (the
+        message is dropped with a warning), so this endpoint never returns
+        409. Track the request with the returned cid via GET /ops/users.
       requestBody:
         required: true
         content:
@@ -80,24 +86,18 @@ paths:
             schema:
               $ref: '#/components/schemas/NewUser'
       responses:
-        '201':
-          description: User created successfully
+        '202':
+          description: User creation accepted and published to the queue
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/UserCreationAccepted'
         '400':
           description: Bad request
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationError'
-        '409':
-          description: A user with this email already exists
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
         '500':
           description: Server error
           content:
@@ -215,6 +215,65 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /ops/user-new/redrive:
+    post:
+      tags:
+        - Ops
+      summary: Force a redrive of the USER.NEW dead-letter queue
+      operationId: redriveUserNewDlq
+      description: >-
+        Starts a native SQS message move task from the USER.NEW DLQ back to
+        its source queue. The move runs asynchronously on the queue side.
+      responses:
+        '202':
+          description: Redrive task started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RedriveAccepted'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ops/users:
+    get:
+      tags:
+        - Ops
+      summary: Find users by correlation id
+      operationId: getUsersByCid
+      description: >-
+        Returns the users created under the given correlation id (the cid
+        returned by POST /users and stamped on the item at write time).
+      parameters:
+        - name: cid
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The correlation id to search for
+      responses:
+        '200':
+          description: Users created under the correlation id (may be empty)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsersByCid'
+        '400':
+          description: Missing or invalid cid parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   schemas:
     User:
@@ -234,6 +293,46 @@ components:
           type: string
           format: date-time
           description: The date and time the user was created
+    UserCreationAccepted:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Confirmation that the creation was accepted
+          example: 'User creation accepted'
+        cid:
+          type: string
+          description: >-
+            Correlation id of the request — propagated in the message and
+            stored on the created item; use it with GET /ops/users
+    RedriveAccepted:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Confirmation that the redrive task was started
+          example: 'DLQ redrive started'
+        taskHandle:
+          type: string
+          description: Handle of the SQS message move task, when reported
+    UsersByCid:
+      type: object
+      required:
+        - cid
+        - items
+      properties:
+        cid:
+          type: string
+          description: The correlation id that was searched
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+          description: The users created under the correlation id
     UserPage:
       type: object
       required:

@@ -8,6 +8,7 @@ import { env } from './infrastructure/config/env';
 import { DynamoDatabase } from './infrastructure/db/dynamo/dynamo.database';
 
 import { UserControllerFactory } from './infrastructure/config/factories/user.controller.factory';
+import { OpsControllerFactory } from './infrastructure/config/factories/ops.controller.factory';
 import { UserNewWorkerFactory } from './infrastructure/config/factories/messaging/user.new.worker.factory';
 
 const OPEN_API_SPEC_FILE_LOCATION = path.resolve(
@@ -19,7 +20,7 @@ const SHUTDOWN_TIMEOUT_MILLISECONDS = 10000;
 
 const app = new Server({
   port: env.port,
-  controllers: [UserControllerFactory.create()],
+  controllers: [UserControllerFactory.create(), OpsControllerFactory.create()],
   database: new DynamoDatabase(),
   apiSpecLocation: OPEN_API_SPEC_FILE_LOCATION,
 });

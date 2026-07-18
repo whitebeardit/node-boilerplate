@@ -118,6 +118,24 @@ travels from the producer all the way to the database operation. With
 `OTEL_SDK_DISABLED=true` the OTel steps are no-ops but cid propagation keeps
 working.
 
+## The cid ends inside the database
+
+`UserRepositoryWrite.createUser` reads the current tracking context at write
+time and stores the `cid` as an attribute of the DynamoDB item (sparse
+`cid-index` GSI). The full chain for the async write path:
+
+```
+POST /users (cid header or generated)
+  → 202 response body { cid } + `cid` response header
+  → USER.NEW MessageAttributes (cid + traceparent)
+  → consumer ALS scope
+  → item attribute `cid` in DynamoDB
+  → GET /ops/users?cid=<cid> finds the created user
+```
+
+This makes any request traceable end to end with a single id: logs (`cid`),
+traces (`trace_id`) and data (`cid` on the item).
+
 ## Tests
 
 - `.env.test` sets `OTEL_SDK_DISABLED=true` — no exporter/spans in tests.

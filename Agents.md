@@ -349,11 +349,15 @@ When generating or editing code, **always**:
 
 ### 9.2 Producer
 
-1. **Interface & implementation** — `I<Event>ProducerSqs` + class inside `src/infrastructure/messaging/<event>/`.
+1. **Port in the domain, implementation in infrastructure** — the contract (`I<Event>Producer`, e.g. `IUserNewProducer`) lives in `src/domain/<feature>/messaging/` (like repository contracts), so domain services can depend on it; the SQS class (`<Event>ProducerSqs`) lives in `src/infrastructure/messaging/<event>/` and implements it.
 2. **Context injection** — inject `traceparent`/`tracestate` (`propagation.inject`) and the current `cid` as MessageAttributes so consumers resume the same trace (cid must be present even with the OTel SDK disabled).
-3. **Service integration** — inject the producer interface via constructor; call it *after* successful repository operations.
+3. **Service integration** — inject the producer port via constructor (`IParams*Service`); async write endpoints publish and answer 202 with the cid.
 4. **Factory registration** — wire it in `src/infrastructure/config/factories/<feature>.service.factory.ts`.
 5. **Tests** — assert body serialization and tracking attributes with `aws-sdk-client-mock`.
+
+### 9.3 Ops
+
+Operational actions follow the same architecture: domain ports (`IDlqRedriver`) + `OpsService` in `src/domain/ops/`, SQS implementation (`SqsDlqRedriver`, native `StartMessageMoveTask`) in `src/infrastructure/messaging/sqs/`, thin `OpsController` (`POST /ops/<event>/redrive`, `GET /ops/users?cid=`) registered like any controller.
 
 ---
 

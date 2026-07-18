@@ -92,6 +92,13 @@ under test. Two rules keep these tests stable:
   paces it).
 - Wait for an observable effect (`sqsMock.commandCalls(DeleteMessageCommand)`)
   before calling `worker.stop()` — never sleep for fixed durations.
+- The async e2e test (`user.create.async.e2e.int.test.ts`) chains the real
+  stack: POST /users → capture the published `SendMessageCommand` input
+  **before** `sqsMock.reset()` (reset wipes recorded calls) → replay it as a
+  `ReceiveMessageCommand` result for the real worker → assert the user landed
+  in dynalite with the same cid → `GET /ops/users?cid=`. One
+  `mockClient(SQSClient)` serves producer and worker (they share the
+  `sqsClient` singleton).
 
 ## Unit tests
 

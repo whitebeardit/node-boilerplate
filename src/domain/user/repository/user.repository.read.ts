@@ -11,4 +11,5 @@ export interface IUserRepositoryRead {
     filter: Partial<IUser>,
     pagination: IPagination,
   ): Promise<IPaginatedResult<IUser>>;
+  listUsersByCid(cid: string): Promise<IUser[]>;
 }

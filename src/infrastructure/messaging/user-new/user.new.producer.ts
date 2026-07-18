@@ -2,10 +2,7 @@ import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { context, propagation } from '@opentelemetry/api';
 import { ContextAsyncHooks, Logger } from 'traceability';
 import { IUser } from '../../../domain/user/interfaces/user.interface';
-
-export interface IUserNewProducerSqs {
-  publishUserNew(user: IUser): Promise<void>;
-}
+import { IUserNewProducer } from '../../../domain/user/messaging/user.new.producer';
 
 export interface IParamsUserNewProducerSqs {
   client: SQSClient;
@@ -13,12 +10,12 @@ export interface IParamsUserNewProducerSqs {
 }
 
 /**
- * Reference producer for USER.NEW: injects the current trace context
- * (traceparent/tracestate via OTel, plus the legacy cid) into the message
- * attributes so any consumer can resume the same trace. The cid is always
- * present even when the OTel SDK is disabled.
+ * SQS implementation of the USER.NEW producer port: injects the current trace
+ * context (traceparent/tracestate via OTel, plus the legacy cid) into the
+ * message attributes so any consumer can resume the same trace. The cid is
+ * always present even when the OTel SDK is disabled.
  */
-export class UserNewProducerSqs implements IUserNewProducerSqs {
+export class UserNewProducerSqs implements IUserNewProducer {
   private readonly client: SQSClient;
   private readonly queueUrl: string;
 

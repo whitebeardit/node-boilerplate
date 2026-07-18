@@ -7,8 +7,9 @@ precedence over any document** (including `Agents.md` — see "Known divergences
 
 A REST API boilerplate in Node.js 20 + TypeScript (strict, CommonJS) with Clean
 Architecture, contract-first design (OpenAPI validates requests **and** responses
-at runtime), DynamoDB via the AWS SDK v3, an SQS consumer for the `USER.NEW`
-event (asyncapi.yaml contract), and observability with OpenTelemetry plus
+at runtime), DynamoDB via the AWS SDK v3, an **asynchronous write path** over
+SQS (`POST /users` publishes `USER.NEW` and answers 202; the consumer
+persists — asyncapi.yaml contract), and observability with OpenTelemetry plus
 structured logs (winston via the `traceability` lib) carrying the `trace_id` on
 every log line.
 
@@ -38,10 +39,11 @@ yarn prettier && yarn lint && yarn build && yarn test
 | `src/domain/<feature>/` | Pure business logic (no I/O): entity, interfaces, repository contracts, service |
 | `src/domain/errors/` | Domain errors (`DomainError`, `BadRequestError` 400, `NotFoundError` 404, `ConflictError` 409) — mapped to HTTP by the central error handler in `server.ts` |
 | `src/domain/common/` | Cross-feature domain types (e.g. `IPagination`) |
+| `src/domain/ops/` | Operational slice: `IOpsService` (DLQ redrive, search by cid) and the `IDlqRedriver` port |
 | `src/interfaces/http/` | `server.ts` (Express + middlewares) and `controllers/` (thin HTTP adapters) |
 | `src/infrastructure/repository/<feature>/` | Repository contract implementations (DynamoDB) |
 | `src/infrastructure/db/dynamo/` | DynamoDB client, `DynamoDatabase` lifecycle adapter and `tables/` (table definitions + item mappers) |
-| `src/infrastructure/messaging/` | `worker.interface.ts` (`IWorker`, `ISqsMessageHandler`), `sqs/` (client + generic `SqsWorker` long-poller) and `user-new/` (payload parser, `UserNewConsumer`, `UserNewProducerSqs`) |
+| `src/infrastructure/messaging/` | `worker.interface.ts` (`IWorker`, `ISqsMessageHandler`), `sqs/` (client, generic `SqsWorker` long-poller, `SqsDlqRedriver`) and `user-new/` (payload parser, `UserNewConsumer`, `UserNewProducerSqs`) |
 | `src/infrastructure/config/` | `env.ts` (fail-fast env validation) and `factories/` (composition root — manual DI via static factories) |
 | `src/infrastructure/telemetry/` | OpenTelemetry (`tracing.ts`) and trace-context injection into the logger (`logger.ts`) |
 | `src/contracts/service.yaml` | OpenAPI 3.0.2 — source of truth for the API, validated at runtime |
@@ -110,6 +112,8 @@ Details in [docs/architecture.md](docs/architecture.md).
 - Required environment variables are validated in `src/infrastructure/config/env.ts` (fail-fast at boot) — read env through it, not via scattered `process.env`.
 - List endpoints use cursor pagination (`limit` + opaque `cursor`, response `{ items, nextCursor }`): the cursor is the DynamoDB `ExclusiveStartKey` base64url-encoded in `dynamo.cursor.ts`; a malformed cursor throws `BadRequestError` (400).
 - Lookups by non-key attributes need a GSI (e.g. `email-index` for `findUserByEmail`) — add the index to the table definition in the same change.
+- `POST /users` is **asynchronous**: it publishes `USER.NEW` and answers 202 `{ message, cid }` — nothing is persisted synchronously and duplicate emails never return 409 (the consumer drops them with a warn). Ports for producers live in the **domain** (`src/domain/user/messaging/`), implementations in `infrastructure/messaging/`.
+- The correlation id is stored on the item at write time (`UserRepositoryWrite.createUser` reads the ALS context) and queried via the sparse `cid-index` GSI (`GET /ops/users?cid=`). Existing production tables do **not** gain new GSIs from the boot-time ensure (Describe→Create only) — add them via IaC.
 - SQS consumers must **never ack an unknown error** — only non-retryable failures (invalid payload, duplicates) are deleted; everything else stays on the queue for the redrive policy → DLQ (configured in infrastructure, not in code).
 - Message handlers must wrap the whole processing in the tracking context (cid ALS + extracted OTel context) **before** the first log or service call, otherwise the trace/cid from the message is lost.
 

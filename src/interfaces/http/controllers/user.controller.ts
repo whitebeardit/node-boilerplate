@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import { ContextAsyncHooks } from 'traceability';
 import { IController } from './controller.interface';
 import { IUserService } from '../../../domain/user/interfaces/user.service.interface';
 
@@ -57,7 +58,10 @@ export class UserController implements IController {
   };
 
   /**
-   * Create a new user
+   * Accept a user creation asynchronously: the payload is published as a
+   * USER.NEW message (carrying the request's cid/traceparent) and the
+   * consumer persists it. The returned cid lets the caller track the request
+   * end to end (GET /ops/users?cid=...).
    */
   createUser = async (
     req: Request,
@@ -66,13 +70,16 @@ export class UserController implements IController {
   ): Promise<void> => {
     const { id, name, email, createdAt } = req.body;
     try {
-      const newUser = await this.userService.createUser({
+      await this.userService.enqueueUserCreation({
         id,
         name,
         email,
         createdAt: createdAt ? new Date(createdAt) : new Date(),
       });
-      res.status(201).json(newUser);
+      res.status(202).json({
+        message: 'User creation accepted',
+        cid: ContextAsyncHooks.getContext()?.cid,
+      });
     } catch (error) {
       next(error);
     }

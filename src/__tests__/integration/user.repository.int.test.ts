@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { ContextAsyncHooks } from 'traceability';
 import '../../../jest/setup-integration-tests';
 import { UserRepositoryRead } from '../../infrastructure/repository/user/user.repository.read';
 import { UserRepositoryWrite } from '../../infrastructure/repository/user/user.repository.write';
@@ -79,6 +80,35 @@ describe('When we update a user with an empty payload', () => {
     const user = await userRepositoryWrite.updateUserById(randomUUID(), {});
 
     expect(user).toBeNull();
+  });
+});
+
+describe('When we create a user inside a tracking context', () => {
+  it('should stamp the cid on the item and find it by correlation id', async () => {
+    const cid = randomUUID().replace(/-/g, '');
+    const trackedUser = {
+      id: randomUUID(),
+      email: `tracked-${randomUUID()}@email.com`,
+      name: 'Whitebeard',
+      createdAt: new Date(),
+    };
+
+    await ContextAsyncHooks.asyncLocalStorage.run({ cid }, () =>
+      userRepositoryWrite.createUser(trackedUser),
+    );
+
+    await expect(userRepositoryRead.listUsersByCid(cid)).resolves.toEqual([
+      trackedUser,
+    ]);
+  });
+});
+
+describe('When we create a user outside any tracking context', () => {
+  it('should store no cid and find nothing by correlation id', async () => {
+    // existingUser was created without an ALS scope in beforeEach
+    await expect(
+      userRepositoryRead.listUsersByCid(`absent-${randomUUID()}`),
+    ).resolves.toEqual([]);
   });
 });
 

@@ -12,6 +12,7 @@ describe('When we load the environment configuration', () => {
       DYNAMODB_ENDPOINT: 'http://localhost:8000',
       DYNAMODB_USERS_TABLE: 'users-table',
       SQS_USER_NEW_QUEUE_URL: 'http://localhost:9324/queue/user-new',
+      SQS_USER_NEW_DLQ_ARN: 'arn:aws:sqs:us-east-1:000000000000:user-new-dlq',
       SQS_ENDPOINT: 'http://localhost:9324',
       PORT: '4000',
     };
@@ -24,6 +25,9 @@ describe('When we load the environment configuration', () => {
       expect(env.usersTableName).toBe('users-table');
       expect(env.sqsUserNewQueueUrl).toBe(
         'http://localhost:9324/queue/user-new',
+      );
+      expect(env.sqsUserNewDlqArn).toBe(
+        'arn:aws:sqs:us-east-1:000000000000:user-new-dlq',
       );
       expect(env.sqsEndpoint).toBe('http://localhost:9324');
       expect(env.port).toBe(4000);
@@ -73,6 +77,18 @@ describe('When we load the environment configuration', () => {
       ).toThrow(
         'Missing required environment variable: SQS_USER_NEW_QUEUE_URL',
       );
+    });
+  });
+
+  it('should throw when the USER.NEW DLQ arn is not set', () => {
+    process.env = { ...ORIGINAL_ENV };
+    delete process.env.SQS_USER_NEW_DLQ_ARN;
+
+    jest.isolateModules(() => {
+      expect(() =>
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        require('../../infrastructure/config/env'),
+      ).toThrow('Missing required environment variable: SQS_USER_NEW_DLQ_ARN');
     });
   });
 });

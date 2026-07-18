@@ -18,6 +18,8 @@ export const env = {
   dynamodbEndpoint: process.env.DYNAMODB_ENDPOINT,
   usersTableName: process.env.DYNAMODB_USERS_TABLE || 'users',
   sqsUserNewQueueUrl: requireEnv('SQS_USER_NEW_QUEUE_URL'),
+  // ARN of the USER.NEW dead-letter queue, used by POST /ops/user-new/redrive.
+  sqsUserNewDlqArn: requireEnv('SQS_USER_NEW_DLQ_ARN'),
   // Point to a local SQS (elasticmq/localstack) in dev; unset means real AWS.
   sqsEndpoint: process.env.SQS_ENDPOINT,
 };

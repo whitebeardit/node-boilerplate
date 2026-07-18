@@ -5,6 +5,7 @@ import {
   PutCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { ContextAsyncHooks } from 'traceability';
 import { IUser } from '../../../domain/user/interfaces/user.interface';
 import { IUserRepositoryWrite } from '../../../domain/user/repository/user.repository.write';
 import { dynamoDocumentClient } from '../../db/dynamo/dynamo.client';
@@ -17,12 +18,18 @@ import {
 
 export class UserRepositoryWrite implements IUserRepositoryWrite {
   /**
-   * Create a new user in the database
+   * Create a new user in the database. The correlation id of the current
+   * tracking context (established by the HTTP middleware or the SQS consumer)
+   * is stored on the item, making the track id queryable end to end.
    * @param userData - The user data to create
    * @returns The created user
    */
   async createUser(userData: IUser): Promise<IUser> {
-    const item = toUserItem(userData);
+    const cid = ContextAsyncHooks.getContext()?.cid;
+    const item: IMUser = {
+      ...toUserItem(userData),
+      ...(typeof cid === 'string' ? { cid } : {}),
+    };
     await dynamoDocumentClient.send(
       new PutCommand({
         TableName: USER_TABLE_NAME,

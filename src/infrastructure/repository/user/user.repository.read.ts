@@ -10,6 +10,7 @@ import { decodeCursor, encodeCursor } from '../../db/dynamo/dynamo.cursor';
 import {
   IMUser,
   toUser,
+  USER_CID_INDEX_NAME,
   USER_EMAIL_INDEX_NAME,
   USER_TABLE_NAME,
 } from '../../db/dynamo/tables/user.table';
@@ -75,6 +76,34 @@ export class UserRepositoryRead implements IUserRepositoryRead {
     );
     const item = Items?.[0];
     return item ? toUser(item as IMUser) : null;
+  }
+
+  /**
+   * List the users created under a correlation id (query on the sparse cid
+   * GSI) — the ops path to trace a request all the way into the database.
+   * @param cid - The correlation id stamped on the items at write time
+   * @returns The users created with that cid (empty when none)
+   */
+  async listUsersByCid(cid: string): Promise<IUser[]> {
+    const items: IMUser[] = [];
+    let exclusiveStartKey: Record<string, unknown> | undefined;
+
+    do {
+      const { Items, LastEvaluatedKey } = await dynamoDocumentClient.send(
+        new QueryCommand({
+          TableName: USER_TABLE_NAME,
+          IndexName: USER_CID_INDEX_NAME,
+          KeyConditionExpression: '#cid = :cid',
+          ExpressionAttributeNames: { '#cid': 'cid' },
+          ExpressionAttributeValues: { ':cid': cid },
+          ExclusiveStartKey: exclusiveStartKey,
+        }),
+      );
+      items.push(...((Items as IMUser[]) ?? []));
+      exclusiveStartKey = LastEvaluatedKey;
+    } while (exclusiveStartKey);
+
+    return items.map(toUser);
   }
 
   /**

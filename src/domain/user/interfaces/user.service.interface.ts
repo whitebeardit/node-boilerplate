@@ -2,6 +2,7 @@ import {
   IPaginatedResult,
   IPagination,
 } from '../../common/pagination.interface';
+import { IUserNewProducer } from '../messaging/user.new.producer';
 import { IUserRepositoryRead } from '../repository/user.repository.read';
 import { IUserRepositoryWrite } from '../repository/user.repository.write';
 import { IUser } from './user.interface';
@@ -21,10 +22,12 @@ export interface IParamsUpdateUser {
 export interface IParamsUserService {
   userRepositoryRead: IUserRepositoryRead;
   userRepositoryWrite: IUserRepositoryWrite;
+  userNewProducer: IUserNewProducer;
 }
 
 export interface IUserService {
   createUser(params: IParamsCreateUser): Promise<IUser>;
+  enqueueUserCreation(params: IParamsCreateUser): Promise<void>;
   getUserById(id: string): Promise<IUser>;
   getUserByEmail(email: string): Promise<IUser>;
   updateUserById(params: IParamsUpdateUser): Promise<IUser>;
