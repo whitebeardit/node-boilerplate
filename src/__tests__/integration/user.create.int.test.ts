@@ -32,6 +32,28 @@ describe('When we try to create a valid user', () => {
   });
 });
 
+describe('When we create a user without providing createdAt', () => {
+  it('should return 201 with a server-generated createdAt', async () => {
+    const { id, name, email } = paramsCreate;
+    const { body, statusCode } = await supertest(app.app)
+      .post(`/users`)
+      .send({ id, name, email });
+
+    expect(statusCode).toBe(201);
+    expect(new Date(body.createdAt).getTime()).not.toBeNaN();
+  });
+});
+
+describe('When we try to create a user with an invalid email', () => {
+  it('should return 400 rejected by the contract validation', async () => {
+    const { statusCode } = await supertest(app.app)
+      .post(`/users`)
+      .send({ ...paramsCreate, email: 'not-an-email' });
+
+    expect(statusCode).toBe(400);
+  });
+});
+
 describe('When we try to create a user with an email already in use', () => {
   it('should return 409 with the contract error shape', async () => {
     await supertest(app.app).post(`/users`).send(paramsCreate);
