@@ -1,8 +1,11 @@
 {
   "name": "boilerplate",
-  "description": "",
+  "description": "Node.js + TypeScript REST API boilerplate: Clean Architecture, OpenAPI-first validation, MongoDB, OpenTelemetry with trace-correlated logs",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "dist/src/main.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "ts-node-dev --env-file=.env src/main.ts",
     "build": "tsc -p .;yarn run copy-essentials",
@@ -11,16 +14,16 @@
     "clean": "rm -rf dist",
     "prettier": "prettier --cache --write src/**/*.ts",
     "lint": "eslint --cache .",
+    "lint:fix": "eslint --cache --fix .",
     "release": "yarn run semantic-release",
     "test": "yarn run test:unit && yarn run test:int",
-    "test:ci": "jest --runInBand --forceExit --coverage --config ./jest/jest.ci-config.ts",
     "test:unit": "jest --config ./jest/jest.config.ts --detectOpenHandles",
     "test:int": "jest --runInBand --forceExit --config ./jest/jest.int-config.ts --detectOpenHandles",
-    "test:component": "jest --runInBand --config ./jest/jest.component-config.ts --detectOpenHandles",
-    "test:mutation": "npx stryker run",
     "test:coverage": "jest --coverage --runInBand --forceExit --config ./jest/jest.int-config.ts --detectOpenHandles && jest --coverage --runInBand --forceExit --config ./jest/jest.config.ts --detectOpenHandles"
   },
   "devDependencies": {
+    "@commitlint/cli": "^19",
+    "@commitlint/config-conventional": "^19",
     "@eslint/js": "^9.16.0",
     "@opentelemetry/context-async-hooks": "^2.9.0",
     "@semantic-release/changelog": "^6.0.3",

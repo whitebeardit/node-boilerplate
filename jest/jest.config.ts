@@ -12,12 +12,7 @@ const config: Config = {
   testEnvironment: 'node',
   transform: { '^.+\\.(t|j)s$': 'ts-jest' },
   collectCoverageFrom: ['**/*.(t|j)s', '!**/test/**'],
-  coveragePathIgnorePatterns: [
-    '/src/server.ts',
-    '/src/contracts/',
-    '/src/__tests__',
-    '/src/constants.ts',
-  ],
+  coveragePathIgnorePatterns: ['/src/contracts/', '/src/__tests__'],
   coverageDirectory: '../coverage/unit',
   preset: 'ts-jest',
   testTimeout: TWENTY_SECONDS_OF_TIMEOUT,
